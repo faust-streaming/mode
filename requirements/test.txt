@@ -6,6 +6,7 @@ flake8
 flake8-bugbear
 flake8-comprehensions
 colorlog
+codecov
 croniter
 hypothesis>=3.31
 freezegun>=0.3.11
