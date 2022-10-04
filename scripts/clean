@@ -10,7 +10,7 @@ if [ -d 'htmlcov' ] ; then
     rm -r htmlcov
 fi
 if [ -d 'faust.egg-info' ] ; then
-    rm -r faust.egg-info
+    rm -r mode.egg-info
 fi
 
 rm -rf .coverage.*
