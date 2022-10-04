@@ -35,5 +35,5 @@ jobs:
         run: "scripts/check"
       - name: "Run tests"
         run: "scripts/tests"
-      - name: "Enforce coverage"
-        run: "scripts/coverage"
+#      - name: "Enforce coverage"
+#        run: "scripts/coverage"
