@@ -12,7 +12,7 @@ if [ -z $GITHUB_ACTIONS ]; then
 fi
 
 ${PREFIX}pytest t/unit t/functional
-${PREFIX}bandit -b extra/bandit/baseline.json -c extra/bandit/config.yaml -r mode
+#${PREFIX}bandit -b extra/bandit/baseline.json -c extra/bandit/config.yaml -r mode
 
 if [ -z $GITHUB_ACTIONS ]; then
     scripts/coverage
