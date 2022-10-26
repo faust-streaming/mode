@@ -19,6 +19,8 @@ from typing import (
     cast,
 )
 
+import asynctest.mock
+
 if sys.version_info >= (3, 8):
     # AsyncMock was introduced in Python 3.8's unittest
     from unittest.mock import AsyncMock as _AsyncMock
@@ -131,7 +133,7 @@ class AsyncMock(_AsyncMock):
 
     def __init__(self, *args: Any, name: str = None, **kwargs: Any) -> None:
         super().__init__(name=name)
-        coro = Mock(*args, **kwargs)
+        coro = asynctest.CoroutineMock(*args, **kwargs)
         self.attach_mock(coro, "coro")
         self.side_effect = coro
 
@@ -141,7 +143,7 @@ class AsyncMagicMock(_MagicMock):
 
     def __init__(self, *args: Any, name: str = None, **kwargs: Any) -> None:
         super().__init__(name=name)
-        coro = MagicMock(*args, **kwargs)
+        coro = asynctest.CoroutineMock(*args, **kwargs)
         self.attach_mock(coro, "coro")
         self.side_effect = coro
 

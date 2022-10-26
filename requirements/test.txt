@@ -1,4 +1,4 @@
-asyncmock; python_version < '3.8'
+asynctest
 bandit
 black
 isort
