@@ -19,6 +19,15 @@ from typing import (
     cast,
 )
 
+if sys.version_info >= (3, 8):
+    # AsyncMock was introduced in Python 3.8's unittest
+    from unittest.mock import AsyncMock, MagicMock
+    # Python 3.8 also added support for __aexit__ and other methods into MagicMock
+else:
+    from asyncmock import AsyncMock, MagicMock
+
+AsyncMagicMock = MagicMock
+
 __all__ = [
     "ANY",
     "IN",
@@ -113,31 +122,6 @@ def ContextMock(*args: Any, **kwargs: Any) -> _ContextMock:
     # so it must return None here.
     obj.__exit__.return_value = None  # type: ignore
     return obj
-
-
-if sys.version_info >= (3, 8):
-    # AsyncMock was introduced in Python 3.8's unittest
-    from unittest.mock import AsyncMock, MagicMock
-    # Python 3.8 also added support for __aexit__ and other methods into MagicMock
-    AsyncMagicMock = MagicMock
-else:
-    class AsyncMock(unittest.mock.Mock):
-        """Mock for ``async def`` function/method or anything awaitable."""
-
-        def __init__(self, *args: Any, name: str = None, **kwargs: Any) -> None:
-            super().__init__(name=name)
-            coro = Mock(*args, **kwargs)
-            self.attach_mock(coro, "coro")
-            self.side_effect = asyncio.coroutine(coro)
-
-    class AsyncMagicMock(unittest.mock.MagicMock):
-        """A magic mock type for ``async def`` functions/methods."""
-
-        def __init__(self, *args: Any, name: str = None, **kwargs: Any) -> None:
-            super().__init__(name=name)
-            coro = MagicMock(*args, **kwargs)
-            self.attach_mock(coro, "coro")
-            self.side_effect = asyncio.coroutine(coro)
 
 
 class AsyncContextMock(unittest.mock.Mock):
