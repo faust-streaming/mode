@@ -4,7 +4,7 @@
 
 |build-status| |coverage| |license| |wheel| |pyversion| |pyimp|
 
-:Version: 0.2.1
+:Version: 0.2.2
 :Web: https://faust-streaming.github.io/mode/
 :Download: https://pypi.org/project/mode-streaming
 :Source: https://github.com/faust-streaming/mode
@@ -266,8 +266,8 @@ http://pypi.org/project/mode-streaming
 
 You can install it by doing the following::
 
-    $ tar xvfz mode-streaming-0.2.1.tar.gz
-    $ cd mode-0.2.1
+    $ tar xvfz mode-streaming-0.2.2.tar.gz
+    $ cd mode-0.2.2
     $ python setup.py build
     # python setup.py install
 

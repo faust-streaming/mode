@@ -4,7 +4,6 @@ import builtins
 import sys
 import types
 import unittest.mock
-from asyncio import coroutine
 from contextlib import contextmanager
 from itertools import count
 from types import ModuleType
