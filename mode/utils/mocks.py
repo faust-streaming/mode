@@ -22,6 +22,7 @@ from typing import (
 if sys.version_info >= (3, 8):
     # AsyncMock was introduced in Python 3.8's unittest
     from unittest.mock import AsyncMock, MagicMock
+
     # Python 3.8 also added support for __aexit__ and other methods into MagicMock
 else:
     from asyncmock import AsyncMock, MagicMock
