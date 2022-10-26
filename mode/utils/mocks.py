@@ -114,6 +114,18 @@ class _ContextMock(Mock, ContextManager):
         pass
 
 
+def ContextMock(*args: Any, **kwargs: Any) -> _ContextMock:
+    """Mock that mocks :keyword:`with` statement contexts."""
+    obj = _ContextMock(*args, **kwargs)
+    obj.attach_mock(_ContextMock(), "__enter__")
+    obj.attach_mock(_ContextMock(), "__exit__")
+    obj.__enter__.return_value = obj  # type: ignore
+    # if __exit__ return a value the exception is ignored,
+    # so it must return None here.
+    obj.__exit__.return_value = None  # type: ignore
+    return obj
+
+
 class AsyncMock(_AsyncMock):
     """Mock for ``async def`` function/method or anything awaitable."""
 
@@ -132,18 +144,6 @@ class AsyncMagicMock(_MagicMock):
         coro = MagicMock(*args, **kwargs)
         self.attach_mock(coro, "coro")
         self.side_effect = coro
-
-
-def ContextMock(*args: Any, **kwargs: Any) -> _ContextMock:
-    """Mock that mocks :keyword:`with` statement contexts."""
-    obj = _ContextMock(*args, **kwargs)
-    obj.attach_mock(_ContextMock(), "__enter__")
-    obj.attach_mock(_ContextMock(), "__exit__")
-    obj.__enter__.return_value = obj  # type: ignore
-    # if __exit__ return a value the exception is ignored,
-    # so it must return None here.
-    obj.__exit__.return_value = None  # type: ignore
-    return obj
 
 
 class AsyncContextMock(unittest.mock.Mock):
