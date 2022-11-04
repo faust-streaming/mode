@@ -2,10 +2,7 @@
  AsyncIO Services Fork
 =====================================================================
 
-|build-status| |coverage| |license| |wheel| |pyversion| |pyimp|
-
-.. image:: https://img.shields.io/pypi/v/mode-streaming.svg
-    :target: https://pypi.python.org/pypi/mode-streaming/
+|release| |build-status| |coverage| |license| |wheel| |pyversion| |pyimp|
 
 :Web: https://faust-streaming.github.io/mode/
 :Download: https://pypi.org/project/mode-streaming
@@ -486,3 +483,7 @@ version 1.2.0 available at http://contributor-covenant.org/version/1/2/0/.
 .. |pyimp| image:: https://img.shields.io/pypi/implementation/mode-streaming.svg
     :alt: Supported Python implementations.
     :target: http://pypi.org/project/mode-streaming/
+
+.. |release| image:: https://img.shields.io/pypi/v/mode-streaming.svg
+    :alt: Latest release
+    :target: https://pypi.python.org/pypi/mode-streaming/
