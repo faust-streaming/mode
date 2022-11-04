@@ -12,7 +12,9 @@ import typing
 from types import ModuleType  # noqa
 from typing import Any, Mapping, NamedTuple, Sequence
 
-__version__ = "0.2.1"
+from setuptools_scm import get_version
+
+__version__ = get_version(root="../", relative_to=__file__)
 __author__ = "Robinhood Markets"
 __contact__ = "opensource@robinhood.com"
 __homepage__ = "https://github.com/faust-streaming/mode"

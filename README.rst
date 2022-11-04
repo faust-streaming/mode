@@ -4,7 +4,9 @@
 
 |build-status| |coverage| |license| |wheel| |pyversion| |pyimp|
 
-:Version: 0.2.1
+.. image:: https://img.shields.io/pypi/v/mode-streaming.svg
+    :target: https://pypi.python.org/pypi/mode-streaming/
+
 :Web: https://faust-streaming.github.io/mode/
 :Download: https://pypi.org/project/mode-streaming
 :Source: https://github.com/faust-streaming/mode
