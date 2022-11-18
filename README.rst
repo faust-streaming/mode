@@ -2,7 +2,7 @@
  AsyncIO Services Fork
 =====================================================================
 
-|release| |build-status| |coverage| |license| |wheel| |pyversion| |pyimp|
+|release| |coverage| |license| |wheel| |pyversion| |pyimp|
 
 :Web: https://faust-streaming.github.io/mode/
 :Download: https://pypi.org/project/mode-streaming
