@@ -6,7 +6,6 @@ autoflake
 flake8
 flake8-bugbear
 flake8-comprehensions
-colorlog
 codecov
 croniter
 hypothesis>=3.31
