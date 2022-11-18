@@ -284,7 +284,7 @@ With pip
 You can install the latest snapshot of Mode using the following
 pip command::
 
-    $ pip install https://github.com/faust-streaming/mode/zipball/master#egg=mode-streaming
+    $ pip install mode-streaming
 
 FAQ
 ===
