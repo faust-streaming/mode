@@ -104,11 +104,12 @@ class ServiceThread(Service):
         **kwargs: Any,
     ) -> None:
         # cannot share loop between threads, so create a new one
-        assert asyncio.get_event_loop()
         if executor is not None:
             raise NotImplementedError("executor argument no longer supported")
-        self.parent_loop = loop or asyncio.get_event_loop()
-        self.thread_loop = thread_loop or asyncio.new_event_loop()
+        self.parent_loop = loop or asyncio.get_event_loop_policy().get_event_loop()
+        self.thread_loop = (
+            thread_loop or asyncio.get_event_loop_policy().new_event_loop()
+        )
         self._thread_started = Event(loop=self.parent_loop)
         if Worker is not None:
             self.Worker = Worker
@@ -195,7 +196,7 @@ class ServiceThread(Service):
 
     async def crash(self, exc: BaseException) -> None:
         # <- .start() will raise
-        if asyncio.get_event_loop() is self.parent_loop:
+        if asyncio.get_event_loop_policy().get_event_loop() is self.parent_loop:
             maybe_set_exception(self._thread_running, exc)
         else:
             self.parent_loop.call_soon_threadsafe(
