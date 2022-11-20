@@ -1,4 +1,13 @@
-from zoneinfo import ZoneInfo
+import sys
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+
+    make_tz = ZoneInfo
+else:
+    import pytz
+
+    make_tz = pytz.timezone
 
 from freezegun import freeze_time
 
@@ -25,7 +34,7 @@ def test_secs_for_next():
 
 @freeze_time("2000-01-01 00:00:00")
 def test_secs_for_next_with_tz():
-    pacific = ZoneInfo("US/Pacific")
+    pacific = make_tz("US/Pacific")
 
     every_8pm_cron_format = "0 20 * * *"
     # In Pacific time it's 16:00 so only 4 hours until 8:00pm
