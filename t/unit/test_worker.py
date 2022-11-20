@@ -1,3 +1,4 @@
+import asyncio
 import signal
 import sys
 from contextlib import contextmanager
@@ -24,7 +25,7 @@ def test_exiting():
 class test_Worker:
     @pytest.fixture()
     def worker(self):
-        return Worker(log_level="INFO", log_file=None)
+        return Worker(loglevel="INFO", logfile=None)
 
     def setup_method(self, method):
         self.setup_logging_patch = patch("mode.utils.logging.setup_logging")
@@ -104,7 +105,7 @@ class test_Worker:
         await worker.on_execute()
 
     @pytest.mark.parametrize(
-        "log_handlers",
+        "loghandlers",
         [
             [],
             [Mock(), Mock()],
@@ -112,18 +113,18 @@ class test_Worker:
             None,
         ],
     )
-    def test_setup_logging(self, log_handlers):
+    def test_setup_logging(self, loghandlers):
         worker_inst = Worker(
-            log_level=5,
-            log_file="TEMP",
-            log_handlers=log_handlers,
+            loglevel=5,
+            logfile="TEMP",
+            loghandlers=loghandlers,
             logging_config=None,
         )
         worker_inst._setup_logging()
         self.setup_logging.assert_called_once_with(
-            log_level=5,
-            log_file="TEMP",
-            log_handlers=log_handlers or [],
+            loglevel=5,
+            logfile="TEMP",
+            loghandlers=loghandlers or [],
             logging_config=None,
         )
 
@@ -229,95 +230,58 @@ class test_Worker:
         worker.stop.assert_awaited_once()
 
     def test_execute_from_commandline(self, worker):
-
         with self.patch_execute(worker) as ensure_future:
             with pytest.raises(SystemExit) as excinfo:
                 worker.execute_from_commandline()
-
             assert excinfo.value.code == 0
-
             assert worker._starting_fut is ensure_future.return_value
             ensure_future.assert_called_once_with(
                 worker.start.return_value, loop=worker.loop
             )
-            worker.loop.run_until_complete.assert_called_once_with(
-                worker.join.return_value
-            )
-            worker._shutdown_loop.assert_called_once_with()
+            worker.stop_and_shutdown.assert_called_once_with()
 
-    # def test_join__MemoryError(self, worker):
-    #     with self.patch_execute(worker):
-    #         worker.join.side_effect = MemoryError()
-    #         with pytest.raises(SystemExit) as excinfo:
-    #             worker.execute_from_commandline()
-    #         assert excinfo.value.code > 0
+    def test_execute_from_commandline__MemoryError(self, worker):
+        with self.patch_execute(worker):
+            worker.start.side_effect = MemoryError()
+            with pytest.raises(SystemExit) as excinfo:
+                worker.execute_from_commandline()
+            assert excinfo.value.code > 0
 
-    # def test_join__MemoryError(self, worker):
-    #     with self.patch_execute(worker):
-    #         worker.join.side_effect = MemoryError()
-    #         with pytest.raises(SystemExit) as excinfo:
-    #             worker.execute_from_commandline()
-    #         assert excinfo.value.code > 0
+    def test_execute_from_commandline__CancelledError(self, worker):
+        with self.patch_execute(worker):
+            worker.start.side_effect = asyncio.CancelledError()
+            with pytest.raises(SystemExit) as excinfo:
+                worker.execute_from_commandline()
+            assert excinfo.value.code == 0
 
-    # def test_join__CancelledError(self, worker):
-    #     with self.patch_execute(worker):
-    #         worker.join.side_effect = asyncio.CancelledError()
-    #         with pytest.raises(SystemExit) as excinfo:
-    #             worker.execute_from_commandline()
-    #         assert excinfo.value.code == 0
-
-    # def test_join__Exception(self, worker):
-    #     with self.patch_execute(worker):
-    #         worker.join.side_effect = KeyError("foo")
-    #         with pytest.raises(SystemExit) as excinfo:
-    #             worker.execute_from_commandline()
-    #         assert excinfo.value.code > 0
+    def test_execute_from_commandline__Exception(self, worker):
+        with self.patch_execute(worker):
+            worker.start.side_effect = KeyError("foo")
+            with pytest.raises(SystemExit) as excinfo:
+                worker.execute_from_commandline()
+            assert excinfo.value.code > 0
 
     @contextmanager
     def patch_execute(self, worker):
-        worker.join = Mock()
-        worker.start = Mock()
         worker.loop = Mock()
-        worker._shutdown_loop = Mock()
+        worker.start = Mock()
+        worker.stop_and_shutdown = Mock()
         with patch("asyncio.ensure_future") as ensure_future:
             yield ensure_future
 
-    # @pytest.mark.asyncio
-    # async def test_join__stop_and_shutdown(self, worker):
-    #     worker._starting_fut = AsyncMock()
-    #     worker.on_worker_shutdown = AsyncMock()
-    #     worker.stop_and_shutdown = AsyncMock()
+    def test_on_worker_shutdown(self, worker):
+        worker.on_worker_shutdown()
 
-    #     await worker.join()
-
-    #     worker.on_worker_shutdown.assert_awaited_once()
-    #     worker.stop_and_shutdown.assert_awaited_once()
-
-    # @pytest.mark.asyncio
-    # async def test_stop_and_shutdown(self, worker):
-    #     worker.stop = AsyncMock()
-    #     worker._gather_all_after_stop = AsyncMock()
-    #     worker._stopped.set()
-
-    #     worker._signal_stop_future = Mock(
-    #         done=Mock(return_value=False), __await__=AsyncMock()
-    #     )
-
-    #     assert worker._signal_stop_future.done() == False
-    #     await worker.stop_and_shutdown()
-    #     worker._signal_stop_future.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_stop_and_shutdown__stopping_worker(self, worker):
-
-        worker.stop = AsyncMock()
+    def test_stop_and_shutdown__stopping_worker(self, worker):
+        worker.loop = Mock()
+        worker.stop = Mock()
+        worker._shutdown_loop = Mock()
         worker._signal_stop_future = None
         worker._stopped.clear()
-        worker._gather_all_after_stop = AsyncMock()
+        worker.loop = Mock()
+        worker.stop_and_shutdown()
 
-        await worker.stop_and_shutdown()
-
-        worker.stop.assert_awaited_once()
+        worker.loop.run_until_complete.assert_called_with(worker.stop.return_value)
 
     def test__shutdown_loop(self, worker):
         with self.patch_shutdown_loop(worker, is_running=False):
@@ -378,19 +342,18 @@ class test_Worker:
             await worker._sentinel_task()
             sleep.assert_called_once_with(1.0)
 
-    @pytest.mark.asyncio
-    async def test__gather_all(self, worker):
+    def test__gather_all(self, worker):
         with patch("mode.worker.all_tasks") as all_tasks:
             with patch("asyncio.sleep", AsyncMock()):
                 all_tasks.return_value = [Mock(), Mock(), Mock()]
+                worker.loop = Mock()
 
-                await worker._gather_all()
+                worker._gather_all()
 
                 for task in all_tasks.return_value:
                     task.cancel.assert_called_once_with()
 
-    @pytest.mark.asyncio
-    async def test__gather_all_early(self, worker):
+    def test__gather_all_early(self, worker):
         with patch("mode.worker.all_tasks") as all_tasks:
             with patch("asyncio.sleep"):
                 worker.loop = Mock()
@@ -402,7 +365,7 @@ class test_Worker:
 
                 all_tasks.side_effect = on_all_tasks
 
-                await worker._gather_all()
+                worker._gather_all()
 
                 for task in all_tasks.return_value:
                     task.cancel.assert_called_once_with()

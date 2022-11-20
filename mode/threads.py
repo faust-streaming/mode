@@ -10,6 +10,7 @@ import asyncio
 import sys
 import threading
 import traceback
+from asyncio.locks import Event
 from time import monotonic
 from typing import (
     Any,
@@ -25,7 +26,6 @@ from typing import (
 
 from .services import Service
 from .utils.futures import maybe_async, maybe_set_exception, maybe_set_result, notify
-from .utils.locks import Event
 
 __all__ = [
     "QueuedMethod",
@@ -110,12 +110,10 @@ class ServiceThread(Service):
         self.thread_loop = (
             thread_loop or asyncio.get_event_loop_policy().new_event_loop()
         )
-        self._thread_started = Event(loop=self.parent_loop)
+        self._thread_started = Event()
         if Worker is not None:
             self.Worker = Worker
         super().__init__(loop=self.thread_loop, **kwargs)
-        assert self._shutdown.loop is self.parent_loop
-        assert self._stopped.loop is self.thread_loop
 
     async def on_thread_started(self) -> None:
         ...
@@ -150,7 +148,7 @@ class ServiceThread(Service):
     #      thread calls _shutdown.set(), parent calls _shutdown.wait()
 
     def _new_shutdown_event(self) -> Event:
-        return Event(loop=self.parent_loop)
+        return Event()
 
     async def maybe_start(self) -> bool:
         if not self._thread_started.is_set():
@@ -324,7 +322,7 @@ class MethodQueue(Service):
     def __init__(self, num_workers: int = 2, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._queue = asyncio.Queue()
-        self._queue_ready = Event(loop=self.loop)
+        self._queue_ready = Event()
         self.num_workers = num_workers
         self._workers = []
 

@@ -34,6 +34,7 @@ from mode.utils.objects import (
     _ForwardRef_safe_eval,
     _remove_optional,
     _restore_from_keywords,
+    annotations,
     canoname,
     canonshortname,
     guess_polymorphic_type,
@@ -43,7 +44,6 @@ from mode.utils.objects import (
     label,
     qualname,
     remove_optional,
-    reveal_annotations,
     shortname,
 )
 
@@ -218,7 +218,7 @@ def test_annotations():
         baz: Union[List["X"], str]
         mas: int = 3
 
-    fields, defaults = reveal_annotations(
+    fields, defaults = annotations(
         X,
         globalns=globals(),
         localns=locals(),
@@ -242,7 +242,7 @@ def test_annotations__skip_classvar():
         baz: Union[List["X"], str]
         mas: int = 3
 
-    fields, defaults = reveal_annotations(
+    fields, defaults = annotations(
         X,
         globalns=globals(),
         localns=locals(),
@@ -263,7 +263,7 @@ def test_annotations__invalid_type():
         foo: List
 
     with pytest.raises(InvalidAnnotation):
-        reveal_annotations(
+        annotations(
             X,
             globalns=globals(),
             localns=locals(),
@@ -280,7 +280,7 @@ def test_annotations__no_local_ns_raises():
         bar: "Bar"
 
     with pytest.raises(NameError):
-        reveal_annotations(
+        annotations(
             X,
             globalns=None,
             localns=None,

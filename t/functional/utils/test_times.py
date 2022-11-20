@@ -34,15 +34,6 @@ def test_want_seconds(input, expected):
 
 
 @pytest.mark.parametrize(
-    "input",
-    (None, datetime.now()),
-)
-def test_want_seconds__unexpected_types(input):
-    with pytest.raises(TypeError):
-        want_seconds(input)
-
-
-@pytest.mark.parametrize(
     "input,expected",
     [
         (10.1, 10.1),
