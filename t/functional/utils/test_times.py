@@ -1,5 +1,5 @@
 import asyncio
-from datetime import timedelta
+from datetime import timedelta, datetime
 from time import monotonic
 
 import pytest
@@ -27,11 +27,19 @@ from mode.utils.times import (
         ("1333/d", 0.01542824074074074),
         (1, 1),
         (timedelta(seconds=1.234), 1.234),
-        (None, None),
     ],
 )
 def test_want_seconds(input, expected):
     assert want_seconds(input) == expected
+
+
+@pytest.mark.parametrize(
+    "input",
+    (None, datetime.now()),
+)
+def test_want_seconds__unexpected_types(input):
+    with pytest.raises(TypeError):
+        want_seconds(input)
 
 
 @pytest.mark.parametrize(

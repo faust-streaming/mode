@@ -1,21 +1,26 @@
+from typing import IO, Type
+
 import asyncio
 import io
 import logging
 import sys
+import time
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
+from unittest.mock import ANY, AsyncMock, Mock, call, patch
 
 import pytest
 
 from mode.utils.logging import (
-    HAS_STACKLEVEL,
+    LOG_RECORD_BUILTINS,
     CompositeLogger,
     DefaultFormatter,
+    ExtensionFormatter,
     FileLogProxy,
     LogMessage,
     Logwrapped,
     _FlightRecorderProxy,
     _formatter_registry,
-    _logger_config,
     _setup_logging,
     current_flight_recorder,
     flight_recorder,
@@ -28,28 +33,21 @@ from mode.utils.logging import (
     redirect_stdouts,
     setup_logging,
 )
-from mode.utils.mocks import ANY, AsyncMock, Mock, call, patch
-
-
-def test__logger_config():
-    assert _logger_config([1, 2], level="WARNING") == {
-        "handlers": [1, 2],
-        "level": "WARNING",
-    }
 
 
 def log_called_with(logger, *args, stacklevel, **kwargs):
-    if HAS_STACKLEVEL:
-        logger.log.assert_called_once_with(*args, stacklevel=stacklevel, **kwargs)
-    else:
-        logger.log.assert_called_once_with(*args, **kwargs)
+    logger.log.assert_called_once_with(*args, stacklevel=stacklevel, **kwargs)
 
 
 def formatter_called_with(formatter, *args, stacklevel, **kwargs):
-    if HAS_STACKLEVEL:
-        formatter.assert_called_once_with(*args, stacklevel=stacklevel, **kwargs)
-    else:
-        formatter.assert_called_once_with(*args, **kwargs)
+    formatter.assert_called_once_with(*args, stacklevel=stacklevel, **kwargs)
+
+
+def test_log_record_builtins():
+    rv = logging.makeLogRecord({})
+    assert LOG_RECORD_BUILTINS - {"message", "asctime", "extra"} == set(
+        rv.__dict__.keys()
+    )
 
 
 class test_CompositeLogger:
@@ -106,7 +104,14 @@ class test_CompositeLogger:
         log.formatter = None
         getattr(log, method)("msg", "arg1", kw1=3, kw2=5)
         log_called_with(
-            logger, severity, "msg", "arg1", kw1=3, kw2=5, stacklevel=3, **extra
+            logger,
+            severity,
+            "msg",
+            "arg1",
+            kw1=3,
+            kw2=5,
+            stacklevel=3,
+            **extra,
         )
 
     def test_dev__enabled(self, log):
@@ -131,17 +136,39 @@ def test_formatter():
         _formatter_registry.remove(f)
 
 
-def test_DefaultFormatter():
-    record = logging.LogRecord(
-        "name",
-        logging.INFO,
-        "path",
-        303,
-        "msg",
-        {"foo": 1, "extra": {"data": {"moo": 30, "baz": [1, 2]}}},
-        exc_info=None,
-    )
-    DefaultFormatter().format(record)
+@pytest.mark.parametrize("MyFormatter", (DefaultFormatter, ExtensionFormatter))
+class test_Formatter:
+    def test_format(self, MyFormatter: Type[logging.Formatter]):
+        extra = {"moo": 30, "baz": 1111, "foo": "hello"}
+        record = logging.getLogger("__test_Formatter__").makeRecord(
+            "name",
+            logging.INFO,
+            "path",
+            303,
+            r"msg %s",
+            (1,),
+            None,
+            extra=extra,
+        )
+        _ = MyFormatter().format(record)
+        keys = set(s.split("=")[0] for s in record.extra.split(", "))
+        assert keys == set(extra.keys())
+
+    def test_formatTime(self, MyFormatter):
+        record = logging.LogRecord(
+            "name",
+            logging.INFO,
+            "path",
+            303,
+            "msg",
+            {"foo": 1, "extra": {"data": {"moo": 30, "baz": [1, 2]}}},
+            exc_info=None,
+        )
+        s = MyFormatter().formatTime(record)
+        iso = datetime.fromtimestamp(
+            record.created, tz=timezone(timedelta(seconds=-time.timezone))
+        ).isoformat(timespec="milliseconds")
+        assert s == iso
 
 
 @pytest.mark.parametrize(
@@ -161,6 +188,15 @@ def test_level_number(input, expected):
 
 
 @pytest.mark.parametrize(
+    "input",
+    (None, 10.0, 0.0),
+)
+def test_level_number__type(input):
+    with pytest.raises(TypeError):
+        level_number(input)
+
+
+@pytest.mark.parametrize(
     "input,expected",
     [
         (logging.DEBUG, "DEBUG"),
@@ -176,55 +212,64 @@ def test_level_name(input, expected):
     assert level_name(input) == expected
 
 
+@pytest.mark.parametrize(
+    "input",
+    (None, 10.0, 0.0),
+)
+def test_level_name__type(input):
+    with pytest.raises(TypeError):
+        level_name(input)
+
+
 class test_setup_logging:
     def test_default(self):
         with patch("mode.utils.logging._setup_logging") as _sl:
-            setup_logging(loglevel="INFO", logfile=None)
+            setup_logging(log_level="INFO", log_file=None)
 
             _sl.assert_called_once_with(
                 level=logging.INFO,
                 filename=None,
                 stream=sys.stdout,
-                loghandlers=None,
+                log_handlers=None,
                 logging_config=None,
             )
 
     def test_logfile(self):
         with patch("mode.utils.logging._setup_logging") as _sl:
-            setup_logging(loglevel="INFO", logfile="foo.txt")
+            setup_logging(log_level="INFO", log_file="foo.txt")
 
             _sl.assert_called_once_with(
                 level=logging.INFO,
                 filename="foo.txt",
                 stream=None,
-                loghandlers=None,
+                log_handlers=None,
                 logging_config=None,
             )
 
     def test_io(self):
-        logfile = Mock()
+        logfile = Mock(spec=IO)
         with patch("mode.utils.logging._setup_logging") as _sl:
-            setup_logging(loglevel="INFO", logfile=logfile)
+            setup_logging(log_level="INFO", log_file=logfile)
 
             _sl.assert_called_once_with(
                 level=logging.INFO,
                 filename=None,
                 stream=logfile,
-                loghandlers=None,
+                log_handlers=None,
                 logging_config=None,
             )
 
     def test_io_no_tty(self):
-        logfile = Mock()
+        logfile = Mock(spec=IO)
         logfile.isatty.side_effect = AttributeError()
         with patch("mode.utils.logging._setup_logging") as _sl:
-            setup_logging(loglevel="INFO", logfile=logfile)
+            setup_logging(log_level="INFO", log_file=logfile)
 
             _sl.assert_called_once_with(
                 level=logging.INFO,
                 filename=None,
                 stream=logfile,
-                loghandlers=None,
+                log_handlers=None,
                 logging_config=None,
             )
 
@@ -264,10 +309,10 @@ class test__setup_logging:
         _setup_logging(
             filename=None,
             stream=Mock(),
-            loghandlers=[mock_handler],
+            log_handlers=[mock_handler],
         )
         self.logging.config.dictConfig.assert_called_once_with(ANY)
-        self.logging.root.handlers.extend.assert_called_once_with([mock_handler])
+        self.logging.root.addHandler.assert_called_once_with(mock_handler)
 
     def test_setup_logging_helper_with_merge_config(self):
         _setup_logging(
@@ -339,11 +384,9 @@ def test_print_task_name():
     out = io.StringIO()
     task = Mock()
     task.__wrapped__ = Mock()
-    task._coro.__name__ = "foo"
     print_task_name(task, file=out)
     assert out.getvalue()
 
-    task._coro.__name__ = None
     task.__wrapped__ = None
     print_task_name(task, file=out)
     assert out.getvalue()
@@ -422,7 +465,7 @@ class test_flight_recorder:
         fut = bb._fut = Mock()
         bb.cancel()
         assert bb._fut is None
-        fut.cancel.assert_called_once_with()
+        fut.cancel.assert_called_once_with()  # type: ignore
 
     def test_log__active(self, bb, logger):
         bb._fut = Mock()
@@ -449,7 +492,7 @@ class test_flight_recorder:
         )
 
     def test__buffer_log(self, bb):
-        with patch("mode.utils.logging.asctime") as asctime:
+        with patch("time.asctime") as asctime:
             bb._buffer_log(logging.ERROR, "msg %r %(foo)s", (1,), {"foo": "bar"})
             assert bb._logs[-1] == LogMessage(
                 logging.ERROR,
@@ -464,7 +507,7 @@ class test_flight_recorder:
         assert not bb._logs
         bb._buffer_log(logging.ERROR, "msg %r %(foo)s", (1,), {"foo": "bar"})
         with patch("asyncio.sleep", AsyncMock()) as sleep:
-            sleep.coro.side_effect = asyncio.CancelledError()
+            sleep.side_effect = asyncio.CancelledError()
             await bb._waiting()
             sleep.assert_called_once_with(bb.timeout)
             assert bb._logs
@@ -615,7 +658,7 @@ async def test_on_timeout(extra_context):
     # Test no errors when there's no active flight recorder
     _assert_log_severities(on_timeout)
 
-    with patch("mode.utils.logging.asctime") as asctime:
+    with patch("time.asctime") as asctime:
         asctime.return_value = "TIME"
         # Test logging to active flight recorder (with nesting)
         with flight_recorder(logger, timeout=300) as fl1:
@@ -645,8 +688,7 @@ def _assert_log_severities(logger):
 
 
 def _log_kwargs(kwargs):
-    if HAS_STACKLEVEL:
-        kwargs.setdefault("stacklevel", 3)
+    kwargs.setdefault("stacklevel", 3)
     return kwargs
 
 
@@ -654,11 +696,19 @@ EXPECTED_LOG_MESSAGES = [
     LogMessage(logging.DEBUG, "DEBUG %d %(a)s", "TIME", (1,), _log_kwargs({"a": "A"})),
     LogMessage(logging.INFO, "INFO %d %(b)s", "TIME", (2,), _log_kwargs({"b": "B"})),
     LogMessage(
-        logging.WARNING, "WARNING %d %(c)s", "TIME", (3,), _log_kwargs({"c": "C"})
+        logging.WARNING,
+        "WARNING %d %(c)s",
+        "TIME",
+        (3,),
+        _log_kwargs({"c": "C"}),
     ),
     LogMessage(logging.ERROR, "ERROR %d %(d)s", "TIME", (4,), _log_kwargs({"d": "D"})),
     LogMessage(
-        logging.CRITICAL, "CRITICAL %d %(e)s", "TIME", (5,), _log_kwargs({"e": "E"})
+        logging.CRITICAL,
+        "CRITICAL %d %(e)s",
+        "TIME",
+        (5,),
+        _log_kwargs({"e": "E"}),
     ),
 ]
 
