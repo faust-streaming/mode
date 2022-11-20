@@ -1,9 +1,8 @@
-from typing import List, NamedTuple, Tuple
-
 import asyncio
 from contextlib import asynccontextmanager
 from functools import reduce
 from itertools import chain
+from typing import List, NamedTuple, Tuple
 from unittest.mock import ANY, AsyncMock, Mock, patch
 
 import pytest

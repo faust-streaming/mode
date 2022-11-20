@@ -1,12 +1,11 @@
 """Mocking and testing utilities."""
-from typing import Any, Iterator, cast
-
 import builtins
 import sys
 import types
 import unittest.mock
 from contextlib import contextmanager
 from types import ModuleType
+from typing import Any, Iterator, cast
 from unittest.mock import MagicMock
 
 __all__ = ["IN", "call", "mask_module", "patch_module"]

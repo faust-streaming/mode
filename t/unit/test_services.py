@@ -1,7 +1,6 @@
-from typing import AsyncContextManager, ContextManager
-
 import asyncio
 from functools import partial
+from typing import AsyncContextManager, ContextManager
 from unittest.mock import ANY, AsyncMock, MagicMock, Mock, call, patch
 
 import pytest

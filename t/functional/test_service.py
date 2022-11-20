@@ -1,8 +1,7 @@
-from typing import AsyncContextManager, ContextManager
-
 import asyncio
 import logging
 from asyncio.locks import Event
+from typing import AsyncContextManager, ContextManager
 from unittest.mock import Mock
 
 import pytest

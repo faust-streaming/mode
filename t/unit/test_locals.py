@@ -1,3 +1,5 @@
+import abc
+import sys
 from typing import (
     AbstractSet,
     AsyncGenerator,
@@ -10,9 +12,6 @@ from typing import (
     MutableSet,
     Sequence,
 )
-
-import abc
-import sys
 from unittest.mock import MagicMock, Mock
 
 import pytest

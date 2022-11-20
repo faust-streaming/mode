@@ -1,3 +1,7 @@
+import abc
+import collections.abc
+import pickle
+import sys
 import typing
 from typing import (
     AbstractSet,
@@ -15,12 +19,7 @@ from typing import (
     Tuple,
     Union,
 )
-from unittest.mock import Mock, ANY
-
-import abc
-import collections.abc
-import pickle
-import sys
+from unittest.mock import ANY, Mock
 
 import pytest
 

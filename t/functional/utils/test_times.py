@@ -1,5 +1,5 @@
 import asyncio
-from datetime import timedelta, datetime
+from datetime import datetime, timedelta
 from time import monotonic
 
 import pytest
