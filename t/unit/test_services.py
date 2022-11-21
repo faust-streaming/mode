@@ -367,10 +367,9 @@ class test_Service:
         service._stopped = Mock()
         service._crashed = Mock()
 
-        with (
-            patch("asyncio.wait", AsyncMock()) as wait,
-            patch("asyncio.ensure_future", Mock()) as ensure_future,
-        ):
+        with patch("asyncio.wait", AsyncMock()) as wait, patch(
+            "asyncio.ensure_future", Mock()
+        ) as ensure_future:
             f1 = Mock()
             f2 = Mock()
             f3 = Mock()
@@ -592,10 +591,9 @@ class test_Service:
 
     @pytest.mark.asyncio
     async def test_wait_many(self, *, service):
-        with (
-            patch("asyncio.wait", AsyncMock()) as wait,
-            patch("asyncio.ensure_future", Mock()) as ensure_future,
-        ):
+        with patch("asyncio.wait", AsyncMock()) as wait, patch(
+            "asyncio.ensure_future", Mock()
+        ) as ensure_future:
             service._wait_one = AsyncMock()
             m1 = AsyncMock()
             m2 = AsyncMock()
