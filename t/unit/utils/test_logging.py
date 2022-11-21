@@ -642,7 +642,8 @@ def _assert_log_severities(logger):
 
 
 def _log_kwargs(kwargs):
-    kwargs.setdefault("stacklevel", 3)
+    if HAS_STACKLEVEL:
+        kwargs.setdefault("stacklevel", 3)
     return kwargs
 
 
