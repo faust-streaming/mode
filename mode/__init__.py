@@ -7,7 +7,6 @@
 import re
 import sys
 import typing
-from typing import NamedTuple
 
 # Lazy loading.
 # - See werkzeug/__init__.py for the rationale behind this.
