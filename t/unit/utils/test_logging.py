@@ -14,6 +14,7 @@ else:
 import pytest
 
 from mode.utils.logging import (
+    HAS_STACKLEVEL,
     CompositeLogger,
     DefaultFormatter,
     ExtensionFormatter,
@@ -37,11 +38,17 @@ from mode.utils.logging import (
 
 
 def log_called_with(logger, *args, stacklevel, **kwargs):
-    logger.log.assert_called_once_with(*args, stacklevel=stacklevel, **kwargs)
+    if HAS_STACKLEVEL:
+        logger.log.assert_called_once_with(*args, stacklevel=stacklevel, **kwargs)
+    else:
+        logger.log.assert_called_once_with(*args, **kwargs)
 
 
 def formatter_called_with(formatter, *args, stacklevel, **kwargs):
-    formatter.assert_called_once_with(*args, stacklevel=stacklevel, **kwargs)
+    if HAS_STACKLEVEL:
+        formatter.assert_called_once_with(*args, stacklevel=stacklevel, **kwargs)
+    else:
+        formatter.assert_called_once_with(*args, **kwargs)
 
 
 class test_CompositeLogger:
