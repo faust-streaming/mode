@@ -2,7 +2,7 @@ import asyncio
 import sys
 import threading
 from asyncio.locks import Event
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 if sys.version_info < (3, 8):
     from asyncmock import AsyncMock
