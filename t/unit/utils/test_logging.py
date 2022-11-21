@@ -4,7 +4,12 @@ import logging
 import sys
 from copy import deepcopy
 from typing import IO
-from unittest.mock import ANY, AsyncMock, Mock, call, patch
+from unittest.mock import ANY, Mock, call, patch
+
+if sys.version_info < (3, 8):
+    from asyncmock import AsyncMock
+else:
+    from unittest.mock import AsyncMock
 
 import pytest
 

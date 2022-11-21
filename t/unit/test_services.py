@@ -1,7 +1,13 @@
 import asyncio
+import sys
 from functools import partial
 from typing import AsyncContextManager, ContextManager
-from unittest.mock import ANY, AsyncMock, MagicMock, Mock, call, patch
+from unittest.mock import ANY, MagicMock, Mock, call, patch
+
+if sys.version_info < (3, 8):
+    from asyncmock import AsyncMock
+else:
+    from unittest.mock import AsyncMock
 
 import pytest
 
