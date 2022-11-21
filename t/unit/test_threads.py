@@ -5,7 +5,7 @@ from asyncio.locks import Event
 from unittest.mock import ANY, Mock, patch
 
 if sys.version_info < (3, 8):
-    from asyncmock import AsyncMock
+    from mock.mock import AsyncMock
 else:
     from unittest.mock import AsyncMock
 
