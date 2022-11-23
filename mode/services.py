@@ -738,7 +738,7 @@ class Service(ServiceBase, ServiceCallbacks):
 
         futures = {
             coro: asyncio.ensure_future(
-                (coro.wait() if isinstance(coro, Event) else coro),
+                coro if isinstance(coro, Awaitable) else coro.wait()
             )
             for coro in coros
         }
