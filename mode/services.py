@@ -630,7 +630,7 @@ class Service(ServiceBase, ServiceCallbacks):
 
         The future will be joined when this service is stopped.
         """
-        fut = asyncio.ensure_future(self._execute_task(coro), loop=self.loop)
+        fut = asyncio.ensure_future(self._execute_task(coro))
         try:
             fut.set_name(repr(coro))
         except AttributeError:
@@ -719,9 +719,7 @@ class Service(ServiceBase, ServiceCallbacks):
         timeout = want_seconds(timeout) if timeout is not None else None
         coro = asyncio.wait(
             [
-                asyncio.ensure_future(
-                    c.wait() if isinstance(c, Event) else c, loop=self.loop
-                )
+                asyncio.ensure_future(c if isinstance(c, Awaitable) else c.wait())
                 for c in coros
             ],
             return_when=asyncio.ALL_COMPLETED,

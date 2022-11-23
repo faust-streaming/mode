@@ -388,8 +388,8 @@ class test_Service:
 
             ensure_future.assert_has_calls(
                 [
-                    call(service._stopped.wait.return_value, loop=service.loop),
-                    call(service._crashed.wait.return_value, loop=service.loop),
+                    call(service._stopped.wait.return_value),
+                    call(service._crashed.wait.return_value),
                 ]
             )
 
@@ -607,7 +607,7 @@ class test_Service:
             assert res is service._wait_one.return_value
 
             ensure_future.assert_has_calls(
-                [call(m1, loop=service.loop), call(m2, loop=service.loop)]
+                [call(m1), call(m2)]
             )
             wait.assert_called_once_with(
                 [ensure_future.return_value, ensure_future.return_value],
