@@ -735,17 +735,15 @@ class Service(ServiceBase, ServiceCallbacks):
         timeout = want_seconds(timeout) if timeout is not None else None
         stopped = self._stopped
         crashed = self._crashed
-        loop = self.loop
 
         futures = {
             coro: asyncio.ensure_future(
                 (coro.wait() if isinstance(coro, Event) else coro),
-                loop=loop,
             )
             for coro in coros
         }
-        futures[stopped] = asyncio.ensure_future(stopped.wait(), loop=loop)
-        futures[crashed] = asyncio.ensure_future(crashed.wait(), loop=loop)
+        futures[stopped] = asyncio.ensure_future(stopped.wait())
+        futures[crashed] = asyncio.ensure_future(crashed.wait())
         done: Set[asyncio.Future]
         pending: Set[asyncio.Future]
         try:
