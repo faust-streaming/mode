@@ -606,9 +606,7 @@ class test_Service:
             res = await service.wait_many([m1, m2], timeout=3.34)
             assert res is service._wait_one.return_value
 
-            ensure_future.assert_has_calls(
-                [call(m1), call(m2)]
-            )
+            ensure_future.assert_has_calls([call(m1), call(m2)])
             wait.assert_called_once_with(
                 [ensure_future.return_value, ensure_future.return_value],
                 return_when=asyncio.ALL_COMPLETED,
