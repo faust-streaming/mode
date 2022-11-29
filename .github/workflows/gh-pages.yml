@@ -2,8 +2,9 @@ name: Pages
 
 on:
   push:
-    branches:
-    - master
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
 
 jobs:
   build:
@@ -11,8 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/setup-python@v4
-      with:
-          python-version: "3.8"
     - uses: actions/checkout@v3
       with:
         fetch-depth: 0 # otherwise, you will failed to push refs to dest repo
@@ -27,6 +26,7 @@ jobs:
         path: "./Documentation"
   deploy:
     name: "Deploy docs"
+    if: github.event_name == 'release' && github.event.action == 'published'
     needs: build
     runs-on: ubuntu-latest
     # Grant GITHUB_TOKEN the permissions required to make a Pages deployment
