@@ -15,7 +15,7 @@ globals().update(
         project="Mode",
         # version_dev='2.0',
         # version_stable='1.4',
-        canonical_url="http://mode-streaming.readthedocs.io",
+        canonical_url="https://faust-streaming.github.io/mode/",
         webdomain="",
         github_project="faust-streaming/mode",
         copyright="2017-2020",
