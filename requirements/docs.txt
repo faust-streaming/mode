@@ -1,6 +1,7 @@
 -r default.txt
 six
-sphinx>=2.2,<3.0
+sphinx
 sphinx_celery>=1.4.8
 sphinx-autodoc-annotation
 alabaster
+babel
