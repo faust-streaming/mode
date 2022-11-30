@@ -694,7 +694,7 @@ class Service(ServiceBase, ServiceCallbacks):
         """Sleep for ``n`` seconds, or until service stopped."""
         try:
             await asyncio.wait_for(
-                self._stopped.wait(),
+                asyncio.ensure_future(self._stopped.wait(), loop=self.loop),
                 timeout=want_seconds(n),
             )
         except asyncio.TimeoutError:
