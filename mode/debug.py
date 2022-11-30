@@ -46,7 +46,7 @@ class BlockingDetector(Service):
     Keyword Arguments:
         timeout (Seconds): number of seconds that the event loop can
             be blocked.
-        raises (Type[BaseException]): Exception to raise when the blocking
+        raises (BaseException): Exception to raise when the blocking
             timeout is exceeded.  Defaults to :exc:`Blocking`.
     """
 
