@@ -3,7 +3,6 @@ import math
 import signal
 import traceback
 from types import FrameType
-from typing import Any
 
 from .services import Service
 from .utils.logging import get_logger
@@ -53,7 +52,7 @@ class BlockingDetector(Service):
     logger = logger
 
     def __init__(
-        self, timeout: Seconds, raises: BaseException = Blocking, **kwargs: Any
+        self, timeout: Seconds, raises: BaseException = Blocking, **kwargs
     ) -> None:
         self.timeout: float = want_seconds(timeout)
         self.raises: BaseException = raises
