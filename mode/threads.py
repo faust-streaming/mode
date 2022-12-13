@@ -192,7 +192,7 @@ class ServiceThread(Service):
 
     async def _wakeup_timer_in_thread(self) -> None:
         self.last_wakeup_at = monotonic()
-        await asyncio.sleep(0)
+        await self.sleep(0)
         asyncio.run_coroutine_threadsafe(asyncio.sleep(0), self.parent_loop)
 
     async def crash(self, exc: BaseException) -> None:
