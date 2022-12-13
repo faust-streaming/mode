@@ -113,6 +113,7 @@ class ServiceThread(Service):
         if Worker is not None:
             self.Worker = Worker
         super().__init__(loop=self.thread_loop, **kwargs)
+        assert self._shutdown.loop is self.parent_loop
 
     async def on_thread_started(self) -> None:
         ...
@@ -186,10 +187,10 @@ class ServiceThread(Service):
                 self._wakeup_timer_in_thread(), self.thread_loop
             )
 
-    async def _wakeup_timer_in_thread(self) -> None:
+    async def _wakeup_timer_in_thread(self) -> asyncio.Future:
         self.last_wakeup_at = monotonic()
-        await self.sleep(0)
-        asyncio.run_coroutine_threadsafe(asyncio.sleep(0), self.parent_loop)
+        fut = asyncio.run_coroutine_threadsafe(asyncio.sleep(0), self.parent_loop)
+        return fut
 
     async def crash(self, exc: BaseException) -> None:
         # <- .start() will raise
