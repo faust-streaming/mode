@@ -567,16 +567,16 @@ class Service(ServiceBase, ServiceCallbacks):
         super().__init__(loop=self._loop)
 
     def _new_started_event(self) -> Event:
-        return Event()
+        return Event(loop=self.loop)
 
     def _new_stopped_event(self) -> Event:
-        return Event()
+        return Event(loop=self.loop)
 
     def _new_shutdown_event(self) -> Event:
-        return Event()
+        return Event(loop=self.loop)
 
     def _new_crashed_event(self) -> Event:
-        return Event()
+        return Event(loop=self.loop)
 
     async def transition_with(
         self, flag: str, fut: Awaitable, *args: Any, **kwargs: Any
@@ -1012,6 +1012,7 @@ class Service(ServiceBase, ServiceCallbacks):
         interval: Seconds,
         *,
         max_drift_correction: float = 0.1,
+        loop: asyncio.AbstractEventLoop = None,
         sleep: Callable[..., Awaitable] = None,
         clock: ClockArg = perf_counter,
         name: str = "",
