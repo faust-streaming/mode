@@ -1012,7 +1012,6 @@ class Service(ServiceBase, ServiceCallbacks):
         interval: Seconds,
         *,
         max_drift_correction: float = 0.1,
-        loop: asyncio.AbstractEventLoop = None,
         sleep: Callable[..., Awaitable] = None,
         clock: ClockArg = perf_counter,
         name: str = "",
