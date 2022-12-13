@@ -184,13 +184,16 @@ class ServiceThread(Service):
                 if monotonic() - self.last_wakeup_at > 3.0:
                     self.log.error("Thread keepalive is not responding...")
             asyncio.run_coroutine_threadsafe(
-                self._wakeup_timer_in_thread(), self.thread_loop
+                asyncio.ensure_future(
+                    self._wakeup_timer_in_thread(), loop=self.parent_loop
+                ),
+                self.thread_loop,
             )
 
-    async def _wakeup_timer_in_thread(self) -> asyncio.Future:
+    async def _wakeup_timer_in_thread(self) -> None:
         self.last_wakeup_at = monotonic()
-        fut = asyncio.run_coroutine_threadsafe(asyncio.sleep(0), self.parent_loop)
-        return fut
+        await asyncio.sleep(0)
+        asyncio.run_coroutine_threadsafe(asyncio.sleep(0), self.parent_loop)
 
     async def crash(self, exc: BaseException) -> None:
         # <- .start() will raise
