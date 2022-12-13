@@ -1,7 +1,6 @@
 import asyncio
 import sys
 import threading
-from asyncio.locks import Event
 from unittest.mock import ANY, Mock, patch
 
 if sys.version_info < (3, 8):
@@ -13,6 +12,7 @@ import pytest
 
 from mode.threads import MethodQueue, QueueServiceThread, ServiceThread, WorkerThread
 from mode.utils.futures import done_future
+from mode.utils.locks import Event
 
 
 class test_WorkerThread:
