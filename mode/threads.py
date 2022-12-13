@@ -10,7 +10,6 @@ import asyncio
 import sys
 import threading
 import traceback
-from asyncio.locks import Event
 from time import monotonic
 from typing import (
     Any,
@@ -26,6 +25,7 @@ from typing import (
 
 from .services import Service
 from .utils.futures import maybe_async, maybe_set_exception, maybe_set_result, notify
+from .utils.locks import Event
 
 __all__ = [
     "QueuedMethod",
@@ -104,13 +104,12 @@ class ServiceThread(Service):
         **kwargs: Any,
     ) -> None:
         # cannot share loop between threads, so create a new one
+        assert asyncio.get_event_loop()
         if executor is not None:
             raise NotImplementedError("executor argument no longer supported")
-        self.parent_loop = loop or asyncio.get_event_loop_policy().get_event_loop()
-        self.thread_loop = (
-            thread_loop or asyncio.get_event_loop_policy().new_event_loop()
-        )
-        self._thread_started = Event()
+        self.parent_loop = loop or asyncio.get_event_loop()
+        self.thread_loop = thread_loop or asyncio.new_event_loop()
+        self._thread_started = Event(loop=self.parent_loop)
         if Worker is not None:
             self.Worker = Worker
         super().__init__(loop=self.thread_loop, **kwargs)
@@ -148,7 +147,7 @@ class ServiceThread(Service):
     #      thread calls _shutdown.set(), parent calls _shutdown.wait()
 
     def _new_shutdown_event(self) -> Event:
-        return Event()
+        return Event(loop=self.parent_loop)
 
     async def maybe_start(self) -> bool:
         if not self._thread_started.is_set():
@@ -264,8 +263,7 @@ class ServiceThread(Service):
     @Service.task
     async def _thread_keepalive(self) -> None:
         async for sleep_time in self.itertimer(
-            1.0,
-            name=f"_thread_keepalive-{self.label}",
+            1.0, name=f"_thread_keepalive-{self.label}", loop=self.thread_loop
         ):  # pragma: no cover
             # The consumer thread will have a separate event loop,
             # and so we use this trick to make sure our loop is
@@ -323,7 +321,7 @@ class MethodQueue(Service):
     def __init__(self, num_workers: int = 2, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self._queue = asyncio.Queue()
-        self._queue_ready = Event()
+        self._queue_ready = Event(loop=self.loop)
         self.num_workers = num_workers
         self._workers = []
 

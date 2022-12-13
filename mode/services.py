@@ -8,7 +8,6 @@ from time import monotonic, perf_counter
 from types import TracebackType
 from typing import (
     Any,
-    AsyncContextManager,
     AsyncIterator,
     Awaitable,
     Callable,
@@ -41,6 +40,7 @@ from .utils.times import Seconds, want_seconds
 from .utils.tracebacks import format_task_stack
 from .utils.trees import Node
 from .utils.types.trees import NodeT
+from .utils.typing import AsyncContextManager
 
 __all__ = ["ServiceBase", "Service", "Diag", "task", "timer", "crontab"]
 
