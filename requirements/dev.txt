@@ -1,0 +1,9 @@
+-r typecheck.txt
+black
+isort
+autoflake
+flake8
+bandit
+flake8-bugbear
+flake8-comprehensions
+pre-commit
