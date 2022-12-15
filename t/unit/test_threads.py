@@ -263,6 +263,23 @@ class test_ServiceThread:
         await asyncio.sleep(0.1)  # wait for call_soon_threadsafe
         thread._thread_running.set_exception.assert_called_with(exc)
 
+    @pytest.mark.asyncio
+    async def test__wakeup_timer_in_thread(self, *, thread, event_loop):
+        thread.add_future = Mock(name="thread.add_future")
+        thread._wakeup_timer_in_thread = AsyncMock()
+        thread._stopped.is_set = Mock(return_value=False)
+        thread._crashed.is_set = Mock(return_value=False)
+        thread.sleep = AsyncMock()
+
+        def cb():
+            thread._stopped.is_set.return_value = True
+            assert thread.should_stop
+
+        event_loop.call_soon(cb)
+        await thread._keepalive2()
+
+        thread._wakeup_timer_in_thread.assert_awaited()
+
 
 class test_MethodQueue:
     @pytest.mark.asyncio
