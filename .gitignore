@@ -6,8 +6,7 @@
 .*.sw*
 dist/
 *.egg-info
-*.egg
-*.egg/
+*.egg*/
 build/
 .build/
 _build/

@@ -2,27 +2,11 @@
 # -*- coding: utf-8 -*-
 
 import re
-import sys
-
-try:
-    import platform
-
-    _pyimp = platform.python_implementation
-except (AttributeError, ImportError):
-
-    def _pyimp():
-        return "Python"
-
 
 from setuptools import find_packages, setup
 
 NAME = "mode-streaming"
 EXTENSIONS = {"eventlet", "gevent", "uvloop"}
-E_UNSUPPORTED_PYTHON = "%s 1.0 requires %%s %%s or later!" % (NAME,)  # noqa: S001
-
-PYIMP = _pyimp()
-if sys.version_info < (3, 6):
-    raise Exception(E_UNSUPPORTED_PYTHON % (PYIMP, "3.6"))  # noqa: S001
 
 from pathlib import Path  # noqa
 
@@ -145,7 +129,7 @@ setup(
     install_requires=reqs("default.txt"),
     tests_require=reqs("test.txt"),
     extras_require=extras_require(),
-    python_requires="~=3.6",
+    python_requires=">=3.7",
     classifiers=classifiers,
     long_description=long_description,
     long_description_content_type="text/x-rst",
