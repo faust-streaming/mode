@@ -181,7 +181,7 @@ class ServiceThread(Service):
 
     async def _keepalive2(self) -> None:
         while not self.should_stop:
-            await self.sleep(2.0)
+            await self.sleep(1.1)
             if self.last_wakeup_at:
                 if monotonic() - self.last_wakeup_at > 3.0:
                     self.log.error("Thread keepalive is not responding...")
