@@ -37,3 +37,7 @@ jobs:
         run: "scripts/check"
       - name: "Run tests"
         run: "scripts/tests"
+      - name: "Enforce coverage"
+        uses: codecov/codecov-action@v3
+        with:
+            token: ${{ secrets.CODECOV_TOKEN }}

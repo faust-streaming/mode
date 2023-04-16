@@ -35,7 +35,6 @@ class Interval(NamedTuple):
 
 
 class test_Timer:
-
     # first clock value
     epoch = 9.0
 

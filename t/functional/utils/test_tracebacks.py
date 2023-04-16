@@ -8,7 +8,6 @@ from mode.utils.tracebacks import Traceback, format_task_stack
 
 @pytest.mark.asyncio
 async def test_format_task_stack():
-
     on_done = asyncio.Event()
 
     async def foo():

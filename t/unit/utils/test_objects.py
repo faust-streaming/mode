@@ -98,7 +98,6 @@ def test_iter_mro_reversed(cls, stop, expected_mro):
 
 
 def test_Unordered():
-
     assert Unordered(1) < Unordered(10)
     x = set()
     x.add(Unordered({"foo": "bar"}))
