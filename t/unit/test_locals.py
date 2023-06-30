@@ -513,7 +513,7 @@ class test_SetProxy:
 class test_MutableSetProxy(test_SetProxy):
     # Note: Inerhits all test cases from test_SetProxy
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture()
     def s(self, *, orig):
         return MutableSetProxy(lambda: orig)
 
