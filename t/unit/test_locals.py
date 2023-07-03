@@ -535,7 +535,8 @@ class test_MutableSetProxy(test_SetProxy):
         assert s == set()
 
     def test_pop(self, *, s):
-        assert s.pop() == 1
+        # CPython pop() returns 1 but PyPy returns 7
+        assert s.pop() in {1, 7}
 
     def test_remove(self, *, s):
         s.remove(1)
