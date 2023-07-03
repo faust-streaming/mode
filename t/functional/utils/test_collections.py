@@ -1,4 +1,5 @@
 import pickle
+import platform
 from unittest.mock import Mock, call, patch
 
 import pytest
@@ -212,9 +213,13 @@ class test_FastUserSet:
         assert (d ^ {2, 3, 4, 5}) == {1, 4, 5}
         assert ({2, 3, 4, 5} ^ d) == {1, 4, 5}
 
+    @pytest.mark.skipif(
+        platform.python_implementation() == "PyPy",
+        reason="__sizeof__ not supported on PyPY",
+    )
     def test_sizeof(self, d):
         d.update({1, 2, 3})
-        assert len(d) == len({1, 2, 3})
+        assert d.__sizeof__() == {1, 2, 3}.__sizeof__()
 
     def test_str(self, d):
         d.update({1, 2, 3})
