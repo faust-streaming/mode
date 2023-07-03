@@ -215,7 +215,7 @@ class test_FastUserSet:
 
     @pytest.mark.skipif(
         platform.python_implementation() == "PyPy",
-        reason="__sizeof__ not supported on PyPY",
+        reason="__sizeof__ not supported on PyPy",
     )
     def test_sizeof(self, d):
         d.update({1, 2, 3})
