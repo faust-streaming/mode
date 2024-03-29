@@ -1,6 +1,13 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = [
+    "setuptools>=61.0",
+    "setuptools_scm[toml]",
+    "wheel",
+]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+# enables setuptools_scm to provide the dynamic version
 
 [tool.setuptools.package-data]
 "modeStreaming" = ["py.typed"]
@@ -10,13 +17,19 @@ universal = true
 
 [project]
 name = "mode-streaming"
-version = "0.3.5"
+dynamic = [
+    "version",
+]
 description = "AsyncIO Service-based programming"
 readme = "README.md"
 requires-python = ">=3.8"
 keywords = ["asyncio", "service", "bootsteps", "graph", "coroutine"]
 authors = [
-    { name = "Faust Streaming", email = "williambbarnhart@gmail.com" },
+    { name = "Ask Solem Hoel", email= "ask@robinhood.com" },
+]
+
+maintainers = [
+    { name = "William Barnhart", email = "williambbarnhart@gmail.com" },
 ]
 classifiers = [
     "Framework :: AsyncIO",
