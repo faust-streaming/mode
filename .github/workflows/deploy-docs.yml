@@ -7,8 +7,6 @@ on:
     branches: ["master"]
   release:
     types: [created]
-    branches:
-      - master
   workflow_dispatch:
 
 jobs:
