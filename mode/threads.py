@@ -169,7 +169,7 @@ class ServiceThread(Service):
         assert not self._thread_started.is_set()
         self._thread_started.set()
         self._thread_running = asyncio.Future(loop=self.parent_loop)
-        self.add_future(self._keepalive2())
+        fut = self.add_future(self._keepalive2())
         try:
             self._thread = self.Worker(self)
             self._thread.start()
@@ -183,6 +183,7 @@ class ServiceThread(Service):
 
                 # wait for thread to be fully started
                 await self._thread_running
+                await fut
         finally:
             self._thread_running = None
 

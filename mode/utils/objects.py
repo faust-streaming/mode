@@ -29,9 +29,24 @@ from typing import (
     Tuple,
     Type,
     TypeVar,
-    _eval_type,
     cast,
 )
+
+try:
+    from typing import _eval_type  # type: ignore
+except ImportError:
+
+    def _eval_type(t, globalns, localns, recursive_guard=frozenset()):  # type: ignore
+        return t
+
+
+try:
+    from typing import _type_check  # type: ignore
+except ImportError:
+
+    def _type_check(arg, msg, is_argument=True, module=None):  # type: ignore
+        return arg
+
 
 try:
     from typing import _ClassVar  # type: ignore
@@ -46,6 +61,25 @@ else:  # pragma: no cover
     # CPython 3.6
     def _is_class_var(x: Any) -> bool:
         return type(x) is _ClassVar
+
+
+if typing.TYPE_CHECKING:
+
+    class ForwardRef:
+        __forward_arg__: str
+        __forward_evaluated__: bool
+        __forward_value__: Type
+        __forward_code__: Any
+
+        def __init__(self, arg: str, is_argument: bool = True) -> None: ...
+
+else:
+    try:
+        # CPython 3.7
+        from typing import ForwardRef
+    except ImportError:  # pragma: no cover
+        # CPython 3.6
+        from typing import _ForwardRef as ForwardRef
 
 
 __all__ = [
@@ -374,7 +408,9 @@ def eval_type(
     if isinstance(typ, str):
         typ = ForwardRef(typ)
     if isinstance(typ, ForwardRef):
-        if sys.version_info < (3, 9):
+        if not typ.__forward_evaluated__:
+            typ = _ForwardRef_safe_eval(typ, globalns, localns)
+        elif sys.version_info < (3, 9):
             typ = typ._evaluate(globalns, localns)
         else:
             typ = typ._evaluate(globalns, localns, frozenset())
@@ -382,6 +418,29 @@ def eval_type(
     if typ in invalid_types:
         raise InvalidAnnotation(typ)
     return alias_types.get(typ, typ)
+
+
+def _ForwardRef_safe_eval(
+    ref: ForwardRef,
+    globalns: Optional[Dict[str, Any]] = None,
+    localns: Optional[Dict[str, Any]] = None,
+) -> Type:
+    # On 3.6/3.7 ForwardRef._evaluate crashes if str references ClassVar
+    if not ref.__forward_evaluated__:
+        if globalns is None and localns is None:
+            globalns = localns = {}
+        elif globalns is None:
+            globalns = localns
+        elif localns is None:
+            localns = globalns
+        val = eval(ref.__forward_code__, globalns, localns)  # noqa: S307
+        if not _is_class_var(val):
+            val = _type_check(
+                val, "Forward references must evaluate to types."
+            )
+        ref.__forward_value__ = val
+        ref.__forward_evaluated__ = True
+    return ref.__forward_value__
 
 
 def _get_globalns(typ: Type) -> Dict[str, Any]:
