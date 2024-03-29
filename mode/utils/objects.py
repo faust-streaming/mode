@@ -62,6 +62,7 @@ else:  # pragma: no cover
     def _is_class_var(x: Any) -> bool:
         return type(x) is _ClassVar
 
+
 if typing.TYPE_CHECKING:
 
     class ForwardRef:
@@ -79,7 +80,6 @@ else:
     except ImportError:  # pragma: no cover
         # CPython 3.6
         from typing import _ForwardRef as ForwardRef
-
 
 
 __all__ = [
@@ -419,8 +419,11 @@ def eval_type(
         raise InvalidAnnotation(typ)
     return alias_types.get(typ, typ)
 
+
 def _ForwardRef_safe_eval(
-    ref: ForwardRef, globalns: Optional[Dict[str, Any]] = None, localns: Optional[Dict[str, Any]] = None
+    ref: ForwardRef,
+    globalns: Optional[Dict[str, Any]] = None,
+    localns: Optional[Dict[str, Any]] = None,
 ) -> Type:
     # On 3.6/3.7 ForwardRef._evaluate crashes if str references ClassVar
     if not ref.__forward_evaluated__:
@@ -432,7 +435,9 @@ def _ForwardRef_safe_eval(
             localns = globalns
         val = eval(ref.__forward_code__, globalns, localns)  # noqa: S307
         if not _is_class_var(val):
-            val = _type_check(val, "Forward references must evaluate to types.")
+            val = _type_check(
+                val, "Forward references must evaluate to types."
+            )
         ref.__forward_value__ = val
         ref.__forward_evaluated__ = True
     return ref.__forward_value__
