@@ -695,7 +695,7 @@ class Service(ServiceBase, ServiceCallbacks):
         )
 
     def _on_future_done(self, fut: asyncio.Future) -> None:
-        self._futures.discard(fut)
+        return self._futures.discard(fut)
 
     def __post_init__(self) -> None:
         """Additional user initialization."""
