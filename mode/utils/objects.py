@@ -389,12 +389,7 @@ def eval_type(
     if isinstance(typ, str):
         typ = ForwardRef(typ)
     if isinstance(typ, ForwardRef):
-        if not typ.__forward_evaluated__:
-            typ = _ForwardRef_safe_eval(typ, globalns, localns)
-        elif sys.version_info < (3, 9):
-            typ = typ._evaluate(globalns, localns)
-        else:
-            typ = typ._evaluate(globalns, localns, frozenset())
+        typ = _ForwardRef_safe_eval(typ, globalns, localns)
     typ = _eval_type(typ, globalns, localns)
     if typ in invalid_types:
         raise InvalidAnnotation(typ)
