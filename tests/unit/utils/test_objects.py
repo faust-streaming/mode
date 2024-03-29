@@ -34,6 +34,7 @@ from mode.utils.objects import (
     annotations,
     canoname,
     canonshortname,
+    eval_type,
     guess_polymorphic_type,
     is_optional,
     is_union,
@@ -42,7 +43,6 @@ from mode.utils.objects import (
     qualname,
     remove_optional,
     shortname,
-    eval_type,
 )
 
 EXTRA_GENERIC_INHERITS_FROM = [abc.ABC]
@@ -187,8 +187,8 @@ def test_canonshortname():
 
 @pytest.mark.skip(reason="Needs fixing, typing.List eval does not work")
 def test_eval_type():
-    assert eval_type('list') == list
-    assert eval_type('typing.List') == typing.List
+    assert eval_type("list") == list
+    assert eval_type("typing.List") == typing.List
 
 
 def test_annotations():
