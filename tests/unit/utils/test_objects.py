@@ -42,6 +42,7 @@ from mode.utils.objects import (
     qualname,
     remove_optional,
     shortname,
+    eval_type,
 )
 
 EXTRA_GENERIC_INHERITS_FROM = [abc.ABC]
@@ -182,6 +183,11 @@ def test_canonshortname():
     assert canonshortname(x, main_name="faust") == "faust.X"
     assert canonshortname(Y, main_name="faust") == ".".join([__name__, "Y"])
     assert canonshortname(y, main_name="faust") == ".".join([__name__, "Y"])
+
+
+def test_eval_type():
+    assert eval_type('list') == list
+    assert eval_type('typing.List') == typing.List
 
 
 def test_annotations():
