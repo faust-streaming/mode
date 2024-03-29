@@ -382,6 +382,7 @@ def eval_type(
 
     ```sh
     >>> eval_type('List[int]') == typing.List[int]
+    >>> eval_type('list[int]') == list[int]
     ```
     """
     invalid_types = invalid_types or set()
