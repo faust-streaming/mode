@@ -64,7 +64,7 @@ else:  # pragma: no cover
 
 if typing.TYPE_CHECKING:
 
-    class ForwardRef:  # noqa
+    class ForwardRef:
         __forward_arg__: str
         __forward_evaluated__: bool
         __forward_value__: Type
@@ -420,7 +420,7 @@ def eval_type(
     return alias_types.get(typ, typ)
 
 def _ForwardRef_safe_eval(
-    ref: ForwardRef, globalns: Dict[str, Any] = None, localns: Dict[str, Any] = None
+    ref: ForwardRef, globalns: Optional[Dict[str, Any]] = None, localns: Optional[Dict[str, Any]] = None
 ) -> Type:
     # On 3.6/3.7 ForwardRef._evaluate crashes if str references ClassVar
     if not ref.__forward_evaluated__:
