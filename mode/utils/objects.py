@@ -63,25 +63,6 @@ else:  # pragma: no cover
         return type(x) is _ClassVar
 
 
-if typing.TYPE_CHECKING:
-
-    class ForwardRef:
-        __forward_arg__: str
-        __forward_evaluated__: bool
-        __forward_value__: Type
-        __forward_code__: Any
-
-        def __init__(self, arg: str, is_argument: bool = True) -> None: ...
-
-else:
-    try:
-        # CPython 3.7
-        from typing import ForwardRef
-    except ImportError:  # pragma: no cover
-        # CPython 3.6
-        from typing import _ForwardRef as ForwardRef
-
-
 __all__ = [
     "FieldMapping",
     "DefaultsMapping",
