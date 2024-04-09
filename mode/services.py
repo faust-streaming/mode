@@ -596,16 +596,16 @@ class Service(ServiceBase, ServiceCallbacks):
         super().__init__(loop=self._loop)
 
     def _new_started_event(self) -> Event:
-        return Event(loop=self.loop)
+        return Event(loop=self._loop)
 
     def _new_stopped_event(self) -> Event:
-        return Event(loop=self.loop)
+        return Event(loop=self._loop)
 
     def _new_shutdown_event(self) -> Event:
-        return Event(loop=self.loop)
+        return Event(loop=self._loop)
 
     def _new_crashed_event(self) -> Event:
-        return Event(loop=self.loop)
+        return Event(loop=self._loop)
 
     async def transition_with(
         self, flag: str, fut: Awaitable, *args: Any, **kwargs: Any
