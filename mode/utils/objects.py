@@ -472,6 +472,7 @@ def is_union(typ: Type) -> bool:
     name = typ.__class__.__name__
     return any(
         [
+            name == "UnionType",  # 3.10
             name == "_UnionGenericAlias",  # 3.9
             name == "_GenericAlias" and typ.__origin__ is typing.Union,  # 3.7
             name == "_Union",  # 3.6
