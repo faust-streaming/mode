@@ -384,6 +384,7 @@ def test_label_pass():
         (int, False),
         (Union[int, bytes], True),
         (Optional[str], True),
+        (int | None, True),
     ],
 )
 def test_is_union(input, expected):
