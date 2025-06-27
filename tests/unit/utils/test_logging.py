@@ -50,15 +50,15 @@ def formatter_called_with(formatter, *args, stacklevel, **kwargs):
 
 
 class test_CompositeLogger:
-    @pytest.fixture()
+    @pytest.fixture
     def logger(self):
         return Mock(name="logger")
 
-    @pytest.fixture()
+    @pytest.fixture
     def formatter(self):
         return Mock(name="formatter")
 
-    @pytest.fixture()
+    @pytest.fixture
     def log(self, *, logger, formatter):
         return CompositeLogger(logger=logger, formatter=formatter)
 
@@ -278,15 +278,15 @@ class test__setup_logging:
 
 
 class test_Logwrapped:
-    @pytest.fixture()
+    @pytest.fixture
     def obj(self):
         return Mock(name="obj")
 
-    @pytest.fixture()
+    @pytest.fixture
     def logger(self):
         return Mock(name="logger")
 
-    @pytest.fixture()
+    @pytest.fixture
     def wrapped(self, *, obj, logger):
         return Logwrapped(obj, logger, severity="INFO", ident="ident")
 
@@ -341,11 +341,11 @@ def test_print_task_name():
 
 
 class test_flight_recorder:
-    @pytest.fixture()
+    @pytest.fixture
     def logger(self):
         return Mock(name="logger")
 
-    @pytest.fixture()
+    @pytest.fixture
     def bb(self, *, logger):
         return flight_recorder(logger, timeout=30.0)
 

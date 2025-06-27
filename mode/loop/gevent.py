@@ -11,7 +11,7 @@ try:
     import gevent.monkey
 except ImportError:
     raise ImportError(
-        "Gevent loop requires the gevent library: " "pip install gevent"
+        "Gevent loop requires the gevent library: pip install gevent"
     ) from None
 gevent.monkey.patch_all()
 
@@ -35,7 +35,7 @@ try:
 except ImportError:
     raise
     raise ImportError(
-        "Gevent loop requires the aiogevent library: " "pip install aiogevent"
+        "Gevent loop requires the aiogevent library: pip install aiogevent"
     ) from None
 
 

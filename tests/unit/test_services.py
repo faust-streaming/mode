@@ -27,7 +27,7 @@ class S(Service):
 
 
 class test_Diag:
-    @pytest.fixture()
+    @pytest.fixture
     def diag(self):
         service = Mock()
         return Diag(service)
@@ -41,7 +41,7 @@ class test_Diag:
 
 
 class test_ServiceTask:
-    @pytest.fixture()
+    @pytest.fixture
     def task(self):
         fun = AsyncMock()
         return ServiceTask(fun)
@@ -133,7 +133,7 @@ async def test_subclass_can_override_Service_task():
 
 
 class test_Service:
-    @pytest.fixture()
+    @pytest.fixture
     def service(self):
         return S()
 

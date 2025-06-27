@@ -14,6 +14,6 @@ def secs_for_next(cron_format: str, tz: Optional[tzinfo] = None) -> float:
     # if not will set now to be the current timestamp (tz
     # unaware)
     # If we have tz, now will be a datetime, if not an integer
-    now = tz and datetime.now(tz) or now_ts
+    now = (tz and datetime.now(tz)) or now_ts
     cron_it = croniter(cron_format, start_time=now)
     return cast(float, cron_it.get_next(float)) - now_ts

@@ -57,11 +57,11 @@ async def test_format_task_stack():  # noqa: C901
 
 
 class test_Traceback:
-    @pytest.fixture()
+    @pytest.fixture
     def frame(self):
         return Mock(name="frame")
 
-    @pytest.fixture()
+    @pytest.fixture
     def tb(self, *, frame):
         return Traceback(frame)
 

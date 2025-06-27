@@ -187,8 +187,8 @@ def test_canonshortname():
 
 @pytest.mark.skip(reason="Needs fixing, typing.List eval does not work")
 def test_eval_type():
-    assert eval_type("list") == list
-    assert eval_type("typing.List") == typing.List
+    assert eval_type("list") is list
+    assert eval_type("typing.List") is typing.List
 
 
 def test_annotations():

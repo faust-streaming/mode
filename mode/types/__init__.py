@@ -3,11 +3,11 @@ from .signals import BaseSignalT, SignalHandlerT, SignalT, SyncSignalT
 from .supervisors import SupervisorStrategyT
 
 __all__ = [
+    "BaseSignalT",
     "DiagT",
     "ServiceT",
-    "BaseSignalT",
     "SignalHandlerT",
     "SignalT",
-    "SyncSignalT",
     "SupervisorStrategyT",
+    "SyncSignalT",
 ]

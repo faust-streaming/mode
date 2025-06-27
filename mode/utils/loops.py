@@ -3,7 +3,7 @@
 import asyncio
 from typing import Any, Callable, Optional
 
-__all__ = ["clone_loop", "call_asap"]
+__all__ = ["call_asap", "clone_loop"]
 
 
 def _is_unix_loop(loop: asyncio.AbstractEventLoop) -> bool:

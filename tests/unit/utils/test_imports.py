@@ -21,7 +21,7 @@ from mode.utils.mocks import mask_module
 
 
 class test_FactoryMapping:
-    @pytest.fixture()
+    @pytest.fixture
     def map(self):
         return FactoryMapping(
             {
@@ -107,7 +107,7 @@ def test__ensure_identifier():
 
 
 class test_symbol_by_name:
-    @pytest.fixture()
+    @pytest.fixture
     def imp(self):
         return Mock(name="imp")
 
@@ -172,7 +172,7 @@ def test_load_extension_classes_syntax_error():
     with patch_importlib_metadata_entry_points():
         with patch("mode.utils.imports.symbol_by_name") as sbn:
             sbn.side_effect = SyntaxError()
-            with pytest.warns(UserWarning):
+            with pytest.warns(UserWarning, match="Cannot load (.*) extension"):
                 assert list(load_extension_classes("foo")) == []
 
 

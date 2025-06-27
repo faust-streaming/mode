@@ -55,16 +55,16 @@ else:
 
 
 __all__ = [
-    "Heap",
-    "FastUserDict",
-    "FastUserSet",
-    "FastUserList",
-    "LRUCache",
-    "ManagedUserDict",
-    "ManagedUserSet",
     "AttributeDict",
     "AttributeDictMixin",
     "DictAttribute",
+    "FastUserDict",
+    "FastUserList",
+    "FastUserSet",
+    "Heap",
+    "LRUCache",
+    "ManagedUserDict",
+    "ManagedUserSet",
     "force_mapping",
 ]
 
@@ -193,7 +193,7 @@ class FastUserDict(MutableMapping[KT, VT]):
         cls, iterable: Iterable[KT], value: VT = None
     ) -> "FastUserDict":
         d = cls()
-        d.update({k: value for k in iterable})
+        d.update(dict.fromkeys(iterable, value))
         return d
 
     def __getitem__(self, key: KT) -> VT:

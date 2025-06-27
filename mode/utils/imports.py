@@ -47,12 +47,12 @@ else:
 __all__ = [
     "FactoryMapping",
     "SymbolArg",
-    "symbol_by_name",
-    "load_extension_class_names",
-    "load_extension_classes",
     "cwd_in_path",
     "import_from_cwd",
+    "load_extension_class_names",
+    "load_extension_classes",
     "smart_import",
+    "symbol_by_name",
 ]
 
 _T = TypeVar("_T")
@@ -113,7 +113,7 @@ class FactoryMapping(FastUserDict, Generic[_T]):
             alt = didyoumean(
                 self.aliases,
                 name_,
-                fmt_none=f'Available choices: {", ".join(self.aliases)}',
+                fmt_none=f"Available choices: {', '.join(self.aliases)}",
             )
             raise ModuleNotFoundError(
                 f"{name!r} is not a valid name. {alt}"
