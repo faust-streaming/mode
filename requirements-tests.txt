@@ -11,7 +11,7 @@ pytest-random-order>=1.1.1
 pytest-sugar>=1.0.0 # TODO: check the need
 pytest>=8.0.2
 pytz
-ruff>=0.3.0
+ruff>=0.12.1
 vulture
 yarl
 

@@ -9,7 +9,7 @@ from mode.debug import Blocking, BlockingDetector
 
 @pytest.mark.skipif(sys.platform == "win32", reason="win32: no SIGALRM")
 class test_BlockingDetector:
-    @pytest.fixture()
+    @pytest.fixture
     def block(self):
         return BlockingDetector(timeout=10.0)
 

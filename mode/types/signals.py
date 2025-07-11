@@ -21,8 +21,8 @@ from mypy_extensions import KwArg, NamedArg, VarArg
 __all__ = [
     "BaseSignalT",
     "FilterReceiverMapping",
-    "SignalHandlerT",
     "SignalHandlerRefT",
+    "SignalHandlerT",
     "SignalT",
     "SyncSignalT",
     "T",

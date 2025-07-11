@@ -18,7 +18,7 @@ from mode.utils.collections import (
 
 
 class test_FastUserDict:
-    @pytest.fixture()
+    @pytest.fixture
     def d(self):
         class X(FastUserDict):
             def __init__(self):
@@ -129,7 +129,7 @@ class test_FastUserSet:
         def __init__(self):
             self.data = set()
 
-    @pytest.fixture()
+    @pytest.fixture
     def d(self):
         return self.X()
 
@@ -337,7 +337,7 @@ class test_ManagedUserDict:
     def test_interface_on_clear(self):
         ManagedUserDict().on_clear()
 
-    @pytest.fixture()
+    @pytest.fixture
     def d(self):
         class X(ManagedUserDict):
             def __init__(self):
@@ -429,7 +429,7 @@ class test_ManagedUserSet:
         def on_clear(self):
             self.on_clear_mock()
 
-    @pytest.fixture()
+    @pytest.fixture
     def s(self):
         return self.ManagedSet()
 
@@ -523,7 +523,7 @@ class test_ManagedUserSet:
 
 
 class test_LRUCache:
-    @pytest.fixture()
+    @pytest.fixture
     def d(self):
         return LRUCache(limit=10)
 
@@ -571,7 +571,7 @@ class test_LRUCache:
 
 
 class test_AttributeDictMixin:
-    @pytest.fixture()
+    @pytest.fixture
     def d(self):
         class X(dict, AttributeDictMixin): ...
 
@@ -586,7 +586,7 @@ class test_AttributeDictMixin:
 
 
 class test_DictAttribute:
-    @pytest.fixture()
+    @pytest.fixture
     def d(self):
         class Object:
             def __init__(self, name):

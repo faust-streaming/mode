@@ -23,7 +23,7 @@ def test_exiting():
 
 
 class test_Worker:
-    @pytest.fixture()
+    @pytest.fixture
     def worker(self):
         return Worker(loglevel="INFO", logfile=None)
 

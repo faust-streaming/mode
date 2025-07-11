@@ -15,11 +15,11 @@ from mode.utils.locks import Event
 
 
 class test_WorkerThread:
-    @pytest.fixture()
+    @pytest.fixture
     def service(self):
         return Mock(name="service")
 
-    @pytest.fixture()
+    @pytest.fixture
     def thread(self, *, service):
         return WorkerThread(service)
 
@@ -48,19 +48,19 @@ class test_WorkerThread:
 
 
 class test_ServiceThread:
-    @pytest.fixture()
+    @pytest.fixture
     def loop(self, *, event_loop):
         return event_loop
 
-    @pytest.fixture()
+    @pytest.fixture
     def thread_loop(self):
         return Mock(name="thread_loop")
 
-    @pytest.fixture()
+    @pytest.fixture
     def Worker(self):
         return Mock(spec=WorkerThread, name="Worker")
 
-    @pytest.fixture()
+    @pytest.fixture
     def thread(self, *, Worker, loop, thread_loop):
         return ServiceThread(Worker=Worker, loop=loop, thread_loop=thread_loop)
 
@@ -373,7 +373,7 @@ class test_MethodQueue:
 
 
 class test_QueueServiceThread:
-    @pytest.fixture()
+    @pytest.fixture
     def s(self):
         return QueueServiceThread()
 

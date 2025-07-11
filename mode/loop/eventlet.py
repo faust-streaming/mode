@@ -8,7 +8,7 @@ try:
     import eventlet
 except ImportError:
     raise ImportError(
-        "Eventlet loop requires the eventlet library: " "pip install eventlet"
+        "Eventlet loop requires the eventlet library: pip install eventlet"
     ) from None
 eventlet.monkey_patch()
 

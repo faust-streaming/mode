@@ -14,11 +14,11 @@ from mode.supervisors import (
 
 
 class test_SupervisorStrategy:
-    @pytest.fixture()
+    @pytest.fixture
     def service(self):
         return Mock(stop=AsyncMock())
 
-    @pytest.fixture()
+    @pytest.fixture
     def sup(self, *, service):
         return SupervisorStrategy(service)
 
@@ -133,7 +133,7 @@ class test_SupervisorStrategy:
 
 
 class test_OneForAllSupervisor:
-    @pytest.fixture()
+    @pytest.fixture
     def sup(self):
         return OneForAllSupervisor(Mock())
 
@@ -143,7 +143,7 @@ class test_OneForAllSupervisor:
 
 
 class test_ForfeitOneForOneSupervisor:
-    @pytest.fixture()
+    @pytest.fixture
     def sup(self):
         return ForfeitOneForOneSupervisor(Mock())
 
@@ -153,7 +153,7 @@ class test_ForfeitOneForOneSupervisor:
 
 
 class test_ForfeitOneForAllSupervisor:
-    @pytest.fixture()
+    @pytest.fixture
     def sup(self):
         return ForfeitOneForAllSupervisor(Mock())
 
@@ -163,7 +163,7 @@ class test_ForfeitOneForAllSupervisor:
 
 
 class test_CrashingSupervisor:
-    @pytest.fixture()
+    @pytest.fixture
     def sup(self):
         return CrashingSupervisor(Mock())
 

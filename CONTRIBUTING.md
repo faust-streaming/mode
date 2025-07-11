@@ -46,7 +46,7 @@ pre-commit installed at .git/hooks/pre-commit
 You can run the format script to make your change compliant:
 
 ```sh
-(venv) $ ./script/format.sh
+(venv) $ ./scripts/format.sh
 + ruff format mode tests
 79 files left unchanged
 + ruff check mode tests --fix

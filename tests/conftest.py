@@ -1,6 +1,6 @@
 import pytest
 
 
-@pytest.fixture()
+@pytest.fixture
 def loop(event_loop):
     return event_loop
