@@ -64,23 +64,23 @@ else:  # pragma: no cover
 
 
 __all__ = [
-    "FieldMapping",
     "DefaultsMapping",
-    "Unordered",
-    "KeywordReduce",
+    "FieldMapping",
     "InvalidAnnotation",
+    "KeywordReduce",
+    "Unordered",
     "abc_compatible_with_init_subclass",
-    "qualname",
-    "shortname",
+    "annotations",
+    "cached_property",
     "canoname",
     "canonshortname",
-    "annotations",
     "eval_type",
-    "iter_mro_reversed",
     "guess_polymorphic_type",
-    "cached_property",
+    "iter_mro_reversed",
     "label",
+    "qualname",
     "shortlabel",
+    "shortname",
 ]
 
 # Workaround for https://bugs.python.org/issue29581
@@ -230,7 +230,7 @@ def canoname(obj: Any, *, main_name: Optional[str] = None) -> str:
     name = qualname(obj)
     parts = name.split(".")
     if parts[0] == "__main__":
-        return ".".join([main_name or _detect_main_name()] + parts[1:])
+        return ".".join([main_name or _detect_main_name(), *parts[1:]])
     return name
 
 
@@ -239,7 +239,7 @@ def canonshortname(obj: Any, *, main_name: Optional[str] = None) -> str:
     name = shortname(obj)
     parts = name.split(".")
     if parts[0] == "__main__":
-        return ".".join([main_name or _detect_main_name()] + parts[1:])
+        return ".".join([main_name or _detect_main_name(), *parts[1:]])
     return name
 
 

@@ -43,7 +43,7 @@ from .utils.tracebacks import format_task_stack
 from .utils.trees import Node
 from .utils.types.trees import NodeT
 
-__all__ = ["ServiceBase", "Service", "Diag", "task", "timer", "crontab"]
+__all__ = ["Diag", "Service", "ServiceBase", "crontab", "task", "timer"]
 
 ClockArg = Callable[[], float]
 
@@ -111,7 +111,7 @@ class ServiceBase(ServiceT):
     def _format_log(
         self, severity: int, msg: str, *args: Any, **kwargs: Any
     ) -> str:
-        return f'[^{"-" * (self.beacon.depth - 1)}{self.shortlabel}]: {msg}'
+        return f"[^{'-' * (self.beacon.depth - 1)}{self.shortlabel}]: {msg}"
 
     async def __aenter__(self) -> ServiceT:
         await self.start()

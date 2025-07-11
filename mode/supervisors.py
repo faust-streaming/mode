@@ -20,9 +20,9 @@ from .utils.times import Bucket, Seconds, rate_limit, want_seconds
 __all__ = [
     "ForfeitOneForAllSupervisor",
     "ForfeitOneForOneSupervisor",
-    "SupervisorStrategy",
-    "OneForOneSupervisor",
     "OneForAllSupervisor",
+    "OneForOneSupervisor",
+    "SupervisorStrategy",
 ]
 
 logger = get_logger(__name__)

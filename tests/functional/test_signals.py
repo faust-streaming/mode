@@ -166,7 +166,7 @@ def test_signal_name():
 
 
 class test_BaseSignal:
-    @pytest.fixture()
+    @pytest.fixture
     def sig(self):
         return Signal()
 

@@ -17,7 +17,7 @@ class Proxy(ServiceProxy):
 
 
 class test_Proxy:
-    @pytest.fixture()
+    @pytest.fixture
     def service(self):
         s = Mock(
             name="service",
@@ -33,11 +33,11 @@ class test_Proxy:
         )
         return s
 
-    @pytest.fixture()
+    @pytest.fixture
     def subservice(self):
         return Mock(name="subservice")
 
-    @pytest.fixture()
+    @pytest.fixture
     def proxy(self, *, service):
         return Proxy(service)
 

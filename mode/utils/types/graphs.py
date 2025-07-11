@@ -13,7 +13,7 @@ from typing import (
     TypeVar,
 )
 
-__all__ = ["GraphFormatterT", "DependencyGraphT"]
+__all__ = ["DependencyGraphT", "GraphFormatterT"]
 
 _T = TypeVar("_T")
 

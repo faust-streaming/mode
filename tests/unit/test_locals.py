@@ -61,7 +61,7 @@ class test_Proxy:
 
         assert x.__doc__ == "real function"
 
-        assert x.__class__ == type(real)
+        assert x.__class__ is type(real)
         assert x.__dict__ == real.__dict__
         assert repr(x) == repr(real)
         assert x.__module__
@@ -254,11 +254,11 @@ class test_Proxy__cached:
 
 
 class test_MappingProxy:
-    @pytest.fixture()
+    @pytest.fixture
     def orig(self):
         return {0: 1, 2: 3, 4: 5, 6: 7, 8: 9}
 
-    @pytest.fixture()
+    @pytest.fixture
     def s(self, *, orig):
         return MappingProxy(lambda: orig)
 
@@ -298,7 +298,7 @@ class test_MappingProxy:
 class test_MutableMappingProxy(test_MappingProxy):
     # Note: Inherits all test cases from test_MappingProxy
 
-    @pytest.fixture()
+    @pytest.fixture
     def s(self, *, orig):
         return MutableMappingProxy(lambda: orig)
 
@@ -361,11 +361,11 @@ class test_MutableMappingProxy(test_MappingProxy):
 
 
 class test_SequenceProxy:
-    @pytest.fixture()
+    @pytest.fixture
     def orig(self):
         return [1, 2, 3, 4, 5, 6, 7]
 
-    @pytest.fixture()
+    @pytest.fixture
     def s(self, *, orig):
         return SequenceProxy(lambda: orig)
 
@@ -405,7 +405,7 @@ class test_SequenceProxy:
 class test_MutableSequenceProxy(test_SequenceProxy):
     # Note: Inherits all test cases from test_SequenceProxy
 
-    @pytest.fixture()
+    @pytest.fixture
     def s(self, *, orig):
         return MutableSequenceProxy(lambda: orig)
 
@@ -458,11 +458,11 @@ class test_MutableSequenceProxy(test_SequenceProxy):
 
 
 class test_SetProxy:
-    @pytest.fixture()
+    @pytest.fixture
     def orig(self):
         return {1, 2, 3, 4, 5, 6, 7}
 
-    @pytest.fixture()
+    @pytest.fixture
     def s(self, *, orig):
         return SetProxy(lambda: orig)
 
@@ -511,7 +511,7 @@ class test_SetProxy:
 class test_MutableSetProxy(test_SetProxy):
     # Note: Inerhits all test cases from test_SetProxy
 
-    @pytest.fixture()
+    @pytest.fixture
     def s(self, *, orig):
         return MutableSetProxy(lambda: orig)
 
@@ -563,7 +563,7 @@ class test_AwaitableProxy:
     async def asynfun(self):
         return 10
 
-    @pytest.fixture()
+    @pytest.fixture
     def s(self):
         return AwaitableProxy(lambda: self.asynfun(), cache=True)
 
@@ -582,11 +582,11 @@ class test_AsyncIterableProxy:
         for i in range(10):
             yield i
 
-    @pytest.fixture()
+    @pytest.fixture
     def orig(self):
         return self.aiter()
 
-    @pytest.fixture()
+    @pytest.fixture
     def s(self, *, orig):
         return AsyncIterableProxy(lambda: orig)
 
@@ -604,7 +604,7 @@ class test_AsyncIterableProxy:
 class test_AsyncIteratorProxy(test_AsyncIterableProxy):
     # Note: Inherits all test cases from test_AsyncIterableProxy
 
-    @pytest.fixture()
+    @pytest.fixture
     def s(self, *, orig):
         return AsyncIteratorProxy(lambda: orig)
 
@@ -623,7 +623,7 @@ class test_AsyncGeneratorProxy(test_AsyncIteratorProxy):
 
     class Double(Exception): ...  # tells coro to double multiplier
 
-    @pytest.fixture()
+    @pytest.fixture
     def s(self, *, orig):
         return AsyncGeneratorProxy(lambda: orig)
 
@@ -640,11 +640,11 @@ class test_AsyncGeneratorProxy(test_AsyncIteratorProxy):
             except self.Double:
                 multiplier *= 2
 
-    @pytest.fixture()
-    def _coro(self):  # noqa: PT005
+    @pytest.fixture
+    def _coro(self):
         return self.corogen()
 
-    @pytest.fixture()
+    @pytest.fixture
     def coro(self, *, _coro):
         return AsyncGeneratorProxy(lambda: _coro)
 
@@ -676,11 +676,11 @@ class test_CoroutineProxy:
             except self.Double:
                 multiplier *= 2
 
-    @pytest.fixture()
-    def _coro(self):  # noqa: PT005
+    @pytest.fixture
+    def _coro(self):
         return self.corogen()
 
-    @pytest.fixture()
+    @pytest.fixture
     def coro(self, *, _coro):
         return CoroutineProxy(lambda: _coro)
 

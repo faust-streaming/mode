@@ -46,21 +46,21 @@ class test_Timer:
     # time could be long in some cases.
     default_yield_s = 0.01
 
-    @pytest.fixture()
+    @pytest.fixture
     def clock(self):
         clock = Mock()
         clock.return_value = self.epoch
         return clock
 
-    @pytest.fixture()
+    @pytest.fixture
     def sleep(self):
         return AsyncMock()
 
-    @pytest.fixture()
+    @pytest.fixture
     def timer(self, *, clock, sleep) -> Timer:
         return Timer(self.interval, name="test", clock=clock, sleep=sleep)
 
-    @pytest.fixture()
+    @pytest.fixture
     def first_interval(self):
         return self.new_interval()
 

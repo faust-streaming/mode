@@ -2,7 +2,7 @@
 
 from typing import IO, AnyStr
 
-__all__ = ["want_bytes", "want_str", "isatty"]
+__all__ = ["isatty", "want_bytes", "want_str"]
 
 
 def want_bytes(s: AnyStr) -> bytes:

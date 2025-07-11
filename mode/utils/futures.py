@@ -28,8 +28,8 @@ __all__ = [
     "maybe_cancel",
     "maybe_set_exception",
     "maybe_set_result",
-    "stampede",
     "notify",
+    "stampede",
 ]
 
 

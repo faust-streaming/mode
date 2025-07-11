@@ -5,20 +5,20 @@ from typing import IO, AnyStr, Iterable, Iterator, NamedTuple, Optional, Union
 
 __all__ = [
     "FuzzyMatch",
-    "want_bytes",
-    "want_str",
-    "isatty",
-    "title",
-    "didyoumean",
-    "fuzzymatch_choices",
-    "fuzzymatch_iter",
-    "fuzzymatch_best",
     "abbr",
     "abbr_fqdn",
+    "didyoumean",
     "enumeration",
-    "shorten_fqdn",
-    "pluralize",
+    "fuzzymatch_best",
+    "fuzzymatch_choices",
+    "fuzzymatch_iter",
+    "isatty",
     "maybecat",
+    "pluralize",
+    "shorten_fqdn",
+    "title",
+    "want_bytes",
+    "want_str",
 ]
 
 
@@ -199,7 +199,7 @@ def _abbr_word_boundary(s: str, max: int, suffix: str) -> str:
     # Do not cut-off any words, but means the limit is even harder
     # and we won't include any partial words.
     if len(s) > max:
-        return suffix and (s[: max - len(suffix)] + suffix) or s[:max]
+        return (suffix and (s[: max - len(suffix)] + suffix)) or s[:max]
     return s
 
 
