@@ -1,6 +1,7 @@
 import abc
 import collections.abc
 import pickle
+import sys
 import typing
 from typing import (
     AbstractSet,
@@ -377,15 +378,17 @@ def test_label_pass():
     assert label(s) is s
 
 
-@pytest.mark.parametrize(
-    "input,expected",
-    [
-        (str, False),
-        (int, False),
-        (Union[int, bytes], True),
-        (Optional[str], True),
-        (int | None, True),
-    ],
-)
+IS_UNION_CASES = [
+    (str, False),
+    (int, False),
+    (Union[int, bytes], True),
+    (Optional[str], True),
+]
+if sys.version_info >= (3, 10):
+    # X | Y syntax is only usable at runtime on Python 3.10+
+    IS_UNION_CASES.append((int | None, True))
+
+
+@pytest.mark.parametrize("input,expected", IS_UNION_CASES)
 def test_is_union(input, expected):
     assert is_union(input) == expected
