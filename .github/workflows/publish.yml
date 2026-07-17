@@ -6,6 +6,9 @@ on:
     types: [created]
     branches:
       - 'master'
+  # Manual re-publish/backfill: run from a tag to rebuild and upload any
+  # files missing on PyPI for that version (skip-existing keeps the rest).
+  workflow_dispatch:
 
 jobs:
   build:
@@ -28,18 +31,22 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
+          name: dist-packages
           path: 'dist/*'
+          if-no-files-found: error
 
   upload_pypi:
     name: Upload packages
     needs: ['build']
     runs-on: 'ubuntu-latest'
-    if: github.event_name == 'release' && github.event.action == 'created'
+    if: >-
+      (github.event_name == 'release' && github.event.action == 'created')
+      || github.event_name == 'workflow_dispatch'
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: artifact
+          name: dist-packages
           path: dist
 
       - name: Publish package to PyPI
@@ -47,3 +54,4 @@ jobs:
         with:
           user: '__token__'
           password: '${{ secrets.PYPI_API_TOKEN }}'
+          skip-existing: true
