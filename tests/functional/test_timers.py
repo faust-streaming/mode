@@ -2,7 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from functools import reduce
 from itertools import chain
-from typing import List, NamedTuple, Optional, Tuple
+from typing import NamedTuple, Optional
 from unittest.mock import ANY, AsyncMock, Mock, patch
 
 import pytest
@@ -170,21 +170,21 @@ class test_Timer:
             expected_new_interval=expected_new_interval,
         )
 
-    def interval_to_clock_sequence(self, interval: Interval) -> List[float]:
+    def interval_to_clock_sequence(self, interval: Interval) -> list[float]:
         # Timer calls clock() twice per iteration,
         # so in an interval this provides the clock for wakeup time
         # and the yield time.
         return [interval.wakeup_time, interval.yield_time]
 
-    def to_clock_values(self, *intervals: Interval) -> List[float]:
+    def to_clock_values(self, *intervals: Interval) -> list[float]:
         return list(chain(*map(self.interval_to_clock_sequence, intervals)))
 
     def build_intervals(
         self,
         timer: Timer,
         first_interval: Interval,
-        *values: Tuple[float, float],
-    ) -> List[Interval]:
+        *values: tuple[float, float],
+    ) -> list[Interval]:
         """Build intervals from tuples of ``(sleep_time, yield_time)``.
 
         If a tuple is missing (is None), then default values
@@ -194,7 +194,7 @@ class test_Timer:
         intervals = [first_interval]
 
         def on_reduce(
-            previous_interval: Interval, tup: Tuple[float, float]
+            previous_interval: Interval, tup: tuple[float, float]
         ) -> Interval:
             sleep_time, yield_time = tup
             next_interval = self.to_next_interval(
@@ -210,13 +210,13 @@ class test_Timer:
         return intervals
 
     async def assert_intervals(
-        self, timer: Timer, intervals: List[Interval]
+        self, timer: Timer, intervals: list[Interval]
     ) -> None:
         assert await self.consume_timer(timer, limit=len(intervals)) == [
             interval.expected_new_interval for interval in intervals
         ]
 
-    async def consume_timer(self, timer: Timer, limit: int) -> List[float]:
+    async def consume_timer(self, timer: Timer, limit: int) -> list[float]:
         return [sleep_time async for sleep_time in aslice(timer, 0, limit)]
 
 

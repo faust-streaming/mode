@@ -4,11 +4,12 @@ __version__ = "0.0.1"
 
 import sys
 import typing
+from collections.abc import Mapping, Sequence
 
 # Lazy loading.
 # - See werkzeug/__init__.py for the rationale behind this.
 from types import ModuleType
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 # -eof meta-
 

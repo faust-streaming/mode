@@ -2,20 +2,14 @@
 
 import abc
 import asyncio
-from contextlib import AsyncExitStack, ExitStack
-from typing import (
-    Any,
-    AsyncContextManager,
-    Awaitable,
-    ContextManager,
-    Coroutine,
-    MutableMapping,
-    Optional,
-    Set,
-    Type,
-    TypeVar,
-    Union,
+from collections.abc import Awaitable, Coroutine, MutableMapping
+from contextlib import (
+    AbstractAsyncContextManager,
+    AbstractContextManager,
+    AsyncExitStack,
+    ExitStack,
 )
+from typing import Any, Optional, TypeVar, Union
 
 from mode.utils.types.trees import NodeT
 
@@ -31,7 +25,7 @@ AsyncFun = Union[Awaitable[T], Coroutine[Any, Any, T]]
 class DiagT(abc.ABC):
     """Diag keeps track of a services diagnostic flags."""
 
-    flags: Set[str]
+    flags: set[str]
     last_transition: MutableMapping[str, float]
 
     @abc.abstractmethod
@@ -44,14 +38,14 @@ class DiagT(abc.ABC):
     def unset_flag(self, flag: str) -> None: ...
 
 
-class ServiceT(AsyncContextManager):
+class ServiceT(AbstractAsyncContextManager):
     """Abstract type for an asynchronous service that can be started/stopped.
 
     See Also:
         `mode.Service`.
     """
 
-    Diag: Type[DiagT]
+    Diag: type[DiagT]
     diag: DiagT
     async_exit_stack: AsyncExitStack
     exit_stack: ExitStack
@@ -66,7 +60,7 @@ class ServiceT(AsyncContextManager):
     def __init__(
         self,
         *,
-        beacon: NodeT = None,
+        beacon: Optional[NodeT] = None,
         loop: Optional[asyncio.AbstractEventLoop] = None,
     ) -> None: ...
 
@@ -79,10 +73,12 @@ class ServiceT(AsyncContextManager):
     ) -> "ServiceT": ...
 
     @abc.abstractmethod
-    async def add_async_context(self, context: AsyncContextManager) -> Any: ...
+    async def add_async_context(
+        self, context: AbstractAsyncContextManager
+    ) -> Any: ...
 
     @abc.abstractmethod
-    def add_context(self, context: ContextManager) -> Any: ...
+    def add_context(self, context: AbstractContextManager) -> Any: ...
 
     @abc.abstractmethod
     async def start(self) -> None: ...

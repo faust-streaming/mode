@@ -7,7 +7,7 @@ want to pass the loop around.
 
 import asyncio
 from collections import deque
-from typing import Deque, Optional
+from typing import Optional
 
 
 class Event:
@@ -19,7 +19,7 @@ class Event:
     false.
     """
 
-    _waiters: Deque[asyncio.Future]
+    _waiters: deque[asyncio.Future]
     _value: bool
     _loop: Optional[asyncio.AbstractEventLoop]
 

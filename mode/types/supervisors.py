@@ -2,7 +2,8 @@
 
 import abc
 import typing
-from typing import Any, Awaitable, Callable, Optional, Type
+from collections.abc import Awaitable
+from typing import Any, Callable, Optional
 
 from mode.utils.times import Seconds
 
@@ -23,7 +24,7 @@ class SupervisorStrategyT(ServiceT):
 
     max_restarts: float
     over: float
-    raises: Type[BaseException]
+    raises: type[BaseException]
 
     @abc.abstractmethod
     def __init__(
@@ -31,8 +32,8 @@ class SupervisorStrategyT(ServiceT):
         *services: ServiceT,
         max_restarts: Seconds = 100.0,
         over: Seconds = 1.0,
-        raises: Optional[Type[BaseException]] = None,
-        replacement: ReplacementT = None,
+        raises: Optional[type[BaseException]] = None,
+        replacement: Optional[ReplacementT] = None,
         **kwargs: Any,
     ) -> None:
         self.replacement: Optional[ReplacementT] = replacement

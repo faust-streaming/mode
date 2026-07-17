@@ -10,9 +10,10 @@ Celery, and other libraries to keep a thread-local stack of objects.
     ```
 """
 
+from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Generator, Generic, List, Optional, Sequence, TypeVar
+from typing import Generic, Optional, TypeVar
 
 __all__ = ["LocalStack"]
 
@@ -35,7 +36,7 @@ class LocalStack(Generic[T]):
     request object.
     """
 
-    _stack: ContextVar[Optional[List[T]]]
+    _stack: ContextVar[Optional[list[T]]]
 
     def __init__(self) -> None:
         self._stack = ContextVar("_stack")

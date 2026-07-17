@@ -74,37 +74,34 @@ CREATING X
 
 import sys
 from collections import deque
-from functools import wraps
-from types import GetSetDescriptorType, TracebackType
-from typing import (
-    AbstractSet,
-    Any,
-    AsyncContextManager,
+from collections.abc import (
     AsyncGenerator,
     AsyncIterable,
     AsyncIterator,
     Awaitable,
-    Callable,
-    ClassVar,
-    ContextManager,
     Coroutine,
-    Dict,
     Generator,
-    Generic,
     Iterable,
     Iterator,
-    List,
     Mapping,
     MutableMapping,
     MutableSequence,
     MutableSet,
-    Optional,
     Sequence,
-    Tuple,
-    Type,
+    Set,
+    ValuesView,
+)
+from contextlib import AbstractAsyncContextManager, AbstractContextManager
+from functools import wraps
+from types import GetSetDescriptorType, TracebackType
+from typing import (
+    Any,
+    Callable,
+    ClassVar,
+    Generic,
+    Optional,
     TypeVar,
     Union,
-    ValuesView,
     cast,
     no_type_check,
     overload,
@@ -161,20 +158,20 @@ VT = TypeVar("VT")
 
 
 def _default_cls_attr(
-    name: str, type_: Type, cls_value: Any
-) -> Callable[[Type], GetSetDescriptorType]:
+    name: str, type_: type, cls_value: Any
+) -> Callable[[type], GetSetDescriptorType]:
     # Proxy uses properties to forward the standard
     # class attributes __module__, __name__ and __doc__ to the real
     # object, but these needs to be a string when accessed from
     # the Proxy class directly.  This is a hack to make that work.
     # -- See Issue #1087.
 
-    def __new__(cls: Type, getter: Callable) -> Any:
+    def __new__(cls: type, getter: Callable) -> Any:
         instance = type_.__new__(cls, cls_value)
         instance.__getter = getter  # type: ignore
         return instance
 
-    def __get__(self: Type, obj: Any, cls: Optional[Type] = None) -> Any:
+    def __get__(self: type, obj: Any, cls: Optional[type] = None) -> Any:
         return self.__getter(obj) if obj is not None else self
 
     return type(name, (type_,), {"__new__": __new__, "__get__": __get__})
@@ -183,7 +180,7 @@ def _default_cls_attr(
 class Proxy(Generic[T]):
     """Proxy to another object."""
 
-    __proxy_source__: ClassVar[Optional[Type[T]]] = None
+    __proxy_source__: ClassVar[Optional[type[T]]] = None
 
     # Code initially stolen from werkzeug.local.Proxy.
     if not SLOTS_ISSUE_PRESENT and not PYPY:  # pragma: no cover
@@ -195,7 +192,7 @@ class Proxy(Generic[T]):
             "__local",
         )
 
-    def __init_subclass__(self, source: Optional[Type[T]] = None) -> None:
+    def __init_subclass__(self, source: Optional[type[T]] = None) -> None:
         super().__init_subclass__()
         if source is not None:
             self._init_from_source(source)
@@ -205,7 +202,7 @@ class Proxy(Generic[T]):
             self._init_from_source(self.__proxy_source__)
 
     @classmethod
-    def _init_from_source(cls, source: Type[T]) -> None:
+    def _init_from_source(cls, source: type[T]) -> None:
         # source must have metaclass ABCMeta
         abstractmethods = getattr(source, "__abstractmethods__", None)
         if abstractmethods is None:
@@ -219,7 +216,7 @@ class Proxy(Generic[T]):
 
     @classmethod
     def _generate_proxy_method(
-        cls, source: Type[T], method_name: str
+        cls, source: type[T], method_name: str
     ) -> Callable:
         @wraps(getattr(source, method_name))
         def _classmethod(self: Proxy[T], *args: Any, **kwargs: Any) -> Any:
@@ -233,8 +230,8 @@ class Proxy(Generic[T]):
     def __init__(
         self,
         local: Callable[..., T],
-        args: Optional[Tuple] = None,
-        kwargs: Optional[Dict] = None,
+        args: Optional[tuple] = None,
+        kwargs: Optional[dict] = None,
         name: Optional[str] = None,
         cache: bool = False,
         __doc__: Optional[str] = None,
@@ -277,7 +274,7 @@ class Proxy(Generic[T]):
     def __doc__(self) -> Optional[str]:
         return cast(str, self._get_current_object().__doc__)
 
-    def _get_class(self) -> Type[T]:
+    def _get_class(self) -> type[T]:
         return self._get_current_object().__class__
 
     @property
@@ -285,7 +282,7 @@ class Proxy(Generic[T]):
         return self._get_class()
 
     @__class__.setter
-    def __class__(self, t: Type[T]) -> None:
+    def __class__(self, t: type[T]) -> None:
         raise NotImplementedError()
 
     def _get_current_object(self) -> T:
@@ -302,7 +299,7 @@ class Proxy(Generic[T]):
 
     def __evaluate__(
         self,
-        _clean: Tuple[str, ...] = (
+        _clean: tuple[str, ...] = (
             "_Proxy__local",
             "_Proxy__args",
             "_Proxy__kwargs",
@@ -342,7 +339,7 @@ class Proxy(Generic[T]):
         return self._get_current_object()
 
     @property
-    def __dict__(self) -> Dict[str, Any]:  # type: ignore
+    def __dict__(self) -> dict[str, Any]:  # type: ignore
         try:
             return self._get_current_object().__dict__
         except RuntimeError as err:  # pragma: no cover
@@ -363,7 +360,7 @@ class Proxy(Generic[T]):
 
     __nonzero__ = __bool__  # Py2
 
-    def __dir__(self) -> List[str]:
+    def __dir__(self) -> list[str]:
         try:
             return dir(self._get_current_object())
         except RuntimeError:  # pragma: no cover
@@ -392,8 +389,8 @@ class Proxy(Generic[T]):
     def __hash__(self) -> int:
         return hash(self._get_current_object())
 
-    def __reduce__(self) -> Tuple:
-        return cast(Tuple, self._get_current_object().__reduce__())
+    def __reduce__(self) -> tuple:
+        return cast(tuple, self._get_current_object().__reduce__())
 
 
 class AwaitableRole(Awaitable[T]):
@@ -426,7 +423,7 @@ class CoroutineRole(Coroutine[T_co, T_contra, V_co]):
 
     def throw(
         self,
-        typ: Type[BaseException],
+        typ: type[BaseException],
         val: Optional[BaseException] = None,
         tb: Optional[TracebackType] = None,
     ) -> T_co:
@@ -482,21 +479,21 @@ class AsyncGeneratorRole(AsyncGenerator[T_co, T_contra]):
         obj = self._get_current_object()  # type: ignore
         return cast(AsyncGenerator[T_co, T_contra], obj)
 
-    def __anext__(self) -> Awaitable[T_co]:
+    def __anext__(self) -> Coroutine[Any, Any, T_co]:
         return self._get_generator().__anext__()
 
-    def asend(self, value: T_contra) -> Awaitable[T_co]:
+    def asend(self, value: T_contra) -> Coroutine[Any, Any, T_co]:
         return self._get_generator().asend(value)
 
     def athrow(
         self,
-        typ: Type[BaseException],
+        typ: type[BaseException],
         val: Optional[BaseException] = None,
         tb: Optional[TracebackType] = None,
-    ) -> Awaitable[T_co]:
+    ) -> Coroutine[Any, Any, T_co]:
         return self._get_generator().athrow(typ, val, tb)
 
-    def aclose(self) -> Awaitable[None]:
+    def aclose(self) -> Coroutine[Any, Any, None]:
         return self._get_generator().aclose()
 
     def __aiter__(self) -> AsyncGenerator[T_co, T_contra]:
@@ -517,7 +514,7 @@ class SequenceRole(Sequence[T_co]):
         return cast(Sequence[T_co], obj)
 
     @overload
-    def __getitem__(self, i: int) -> T_co: ...
+    def __getitem__(self, s: int) -> T_co: ...
 
     @overload
     def __getitem__(self, s: slice) -> MutableSequence[T_co]: ...
@@ -559,13 +556,13 @@ class MutableSequenceRole(SequenceRole[T], MutableSequence[T]):
         self._get_sequence().insert(index, object)
 
     @overload
-    def __setitem__(self, i: int, o: T) -> None: ...
+    def __setitem__(self, s: int, o: T) -> None: ...
 
     @overload
     def __setitem__(self, s: slice, o: Iterable[T]) -> None: ...
 
-    def __setitem__(self, index_or_slice: Any, o: Any) -> None:
-        self._get_sequence().__setitem__(index_or_slice, o)
+    def __setitem__(self, s: Any, o: Any) -> None:
+        self._get_sequence().__setitem__(s, o)
 
     @overload
     def __delitem__(self, i: int) -> None: ...
@@ -601,35 +598,35 @@ class MutableSequenceProxy(
     """Proxy to `typing.MutableSequence` object."""
 
 
-class SetRole(AbstractSet[T_co]):
-    """Role/Mixin for `typing.AbstractSet` proxy methods."""
+class SetRole(Set[T_co]):
+    """Role/Mixin for `collections.abc.Set` proxy methods."""
 
-    def _get_set(self) -> AbstractSet[T_co]:
+    def _get_set(self) -> Set[T_co]:
         obj = self._get_current_object()  # type: ignore
-        return cast(AbstractSet[T_co], obj)
+        return cast(Set[T_co], obj)
 
-    def __le__(self, s: AbstractSet[Any]) -> bool:
+    def __le__(self, s: Set[Any]) -> bool:
         return self._get_set().__le__(s)
 
-    def __lt__(self, s: AbstractSet[Any]) -> bool:
+    def __lt__(self, s: Set[Any]) -> bool:
         return self._get_set().__lt__(s)
 
-    def __gt__(self, s: AbstractSet[Any]) -> bool:
+    def __gt__(self, s: Set[Any]) -> bool:
         return self._get_set().__gt__(s)
 
-    def __ge__(self, s: AbstractSet[Any]) -> bool:
+    def __ge__(self, s: Set[Any]) -> bool:
         return self._get_set().__ge__(s)
 
-    def __and__(self, s: AbstractSet[Any]) -> AbstractSet[T_co]:
+    def __and__(self, s: Set[Any]) -> Set[T_co]:
         return self._get_set().__and__(s)
 
-    def __or__(self, s: AbstractSet[T]) -> AbstractSet[Union[T_co, T]]:
+    def __or__(self, s: Set[T]) -> Set[Union[T_co, T]]:
         return self._get_set().__or__(s)
 
-    def __sub__(self, s: AbstractSet[Any]) -> AbstractSet[T_co]:
+    def __sub__(self, s: Set[Any]) -> Set[T_co]:
         return self._get_set().__sub__(s)
 
-    def __xor__(self, s: AbstractSet[T]) -> AbstractSet[Union[T_co, T]]:
+    def __xor__(self, s: Set[T]) -> Set[Union[T_co, T]]:
         return self._get_set().__xor__(s)
 
     def isdisjoint(self, s: Iterable[Any]) -> bool:
@@ -645,8 +642,8 @@ class SetRole(AbstractSet[T_co]):
         return self._get_set().__len__()
 
 
-class SetProxy(Proxy[AbstractSet[T_co]], SetRole[T_co]):
-    """Proxy to `typing.AbstractSet` object."""
+class SetProxy(Proxy[Set[T_co]], SetRole[T_co]):
+    """Proxy to `collections.abc.Set` object."""
 
 
 class MutableSetRole(SetRole[T], MutableSet[T]):
@@ -671,16 +668,16 @@ class MutableSetRole(SetRole[T], MutableSet[T]):
     def remove(self, element: T) -> None:
         self._get_set().remove(element)
 
-    def __ior__(self, s: AbstractSet[S]) -> MutableSet[Union[T, S]]:
+    def __ior__(self, s: Set[S]) -> MutableSet[Union[T, S]]:
         return self._get_set().__ior__(s)
 
-    def __iand__(self, s: AbstractSet[Any]) -> MutableSet[T]:
+    def __iand__(self, s: Set[Any]) -> MutableSet[T]:
         return self._get_set().__iand__(s)
 
-    def __ixor__(self, s: AbstractSet[S]) -> MutableSet[Union[T, S]]:
+    def __ixor__(self, s: Set[S]) -> MutableSet[Union[T, S]]:
         return self._get_set().__ixor__(s)
 
-    def __isub__(self, s: AbstractSet[Any]) -> MutableSet[T]:
+    def __isub__(self, s: Set[Any]) -> MutableSet[T]:
         return self._get_set().__isub__(s)
 
 
@@ -688,12 +685,12 @@ class MutableSetProxy(Proxy[MutableSet[T_co]], MutableSetRole[T_co]):
     """Proxy to `typing.MutableSet` object."""
 
 
-class ContextManagerRole(ContextManager[T]):
+class ContextManagerRole(AbstractContextManager[T]):
     """Role/Mixin for `typing.ContextManager` proxy methods."""
 
-    def _get_context(self) -> ContextManager[T]:
+    def _get_context(self) -> AbstractContextManager[T]:
         obj = self._get_current_object()  # type: ignore
-        return cast(ContextManager[T], obj)
+        return cast(AbstractContextManager[T], obj)
 
     def __enter__(self) -> Any:
         return self._get_context().__enter__()
@@ -702,30 +699,32 @@ class ContextManagerRole(ContextManager[T]):
         return self._get_context().__exit__(*exc_info)
 
 
-class ContextManagerProxy(Proxy[ContextManager[T]], ContextManagerRole[T]):
-    """Proxy to `typing.ContextManager` object."""
+class ContextManagerProxy(
+    Proxy[AbstractContextManager[T]], ContextManagerRole[T]
+):
+    """Proxy to `contextlib.AbstractContextManager` object."""
 
 
-class AsyncContextManagerRole(AsyncContextManager[T_co]):
-    """Role/Mixin for `typing.AsyncContextManager` proxy methods."""
+class AsyncContextManagerRole(AbstractAsyncContextManager[T_co]):
+    """Role/Mixin for `contextlib.AbstractAsyncContextManager` proxy methods."""
 
-    def __aenter__(self) -> Awaitable[T_co]:
+    def __aenter__(self) -> Coroutine[Any, Any, T_co]:
         obj = self._get_current_object()  # type: ignore
-        return cast(Awaitable[T_co], obj.__aenter__())
+        return obj.__aenter__()
 
     def __aexit__(
         self,
-        exc_type: Optional[Type[BaseException]],
+        exc_type: Optional[type[BaseException]],
         exc_value: Optional[BaseException],
         traceback: Optional[TracebackType],
-    ) -> Awaitable[Optional[bool]]:
+    ) -> Coroutine[Any, Any, Optional[bool]]:
         obj = self._get_current_object()  # type: ignore
         val = obj.__aexit__(exc_type, exc_value, traceback)
-        return cast(Awaitable[Optional[bool]], val)
+        return cast(Coroutine[Any, Any, Optional[bool]], val)
 
 
 class AsyncContextManagerProxy(
-    Proxy[AsyncContextManager[T_co]], AsyncContextManagerRole[T_co]
+    Proxy[AbstractAsyncContextManager[T_co]], AsyncContextManagerRole[T_co]
 ):
     """Proxy to `typing.AsyncContextManager` object."""
 
@@ -749,10 +748,10 @@ class MappingRole(Mapping[KT, VT_co]):
     def get(self, *args: Any, **kwargs: Any) -> Any:
         return self._get_mapping().get(*args, **kwargs)
 
-    def items(self) -> AbstractSet[Tuple[KT, VT_co]]:
+    def items(self) -> Set[tuple[KT, VT_co]]:
         return self._get_mapping().items()
 
-    def keys(self) -> AbstractSet[KT]:
+    def keys(self) -> Set[KT]:
         return self._get_mapping().keys()
 
     def values(self) -> ValuesView[VT_co]:
@@ -797,7 +796,7 @@ class MutableMappingRole(MappingRole[KT, VT], MutableMapping[KT, VT]):
     def pop(self, *args: Any, **kwargs: Any) -> Any:
         return self._get_mapping().pop(*args, **kwargs)
 
-    def popitem(self) -> Tuple[KT, VT]:
+    def popitem(self) -> tuple[KT, VT]:
         return self._get_mapping().popitem()
 
     def setdefault(self, k: KT, *args: Any) -> VT:
@@ -807,7 +806,7 @@ class MutableMappingRole(MappingRole[KT, VT], MutableMapping[KT, VT]):
     def update(self, __m: Mapping[KT, VT], **kwargs: VT) -> None: ...
 
     @overload
-    def update(self, __m: Iterable[Tuple[KT, VT]], **kwargs: VT) -> None: ...
+    def update(self, __m: Iterable[tuple[KT, VT]], **kwargs: VT) -> None: ...
 
     @overload
     def update(self, **kwargs: VT) -> None: ...

@@ -2,7 +2,7 @@
 
 from contextlib import AbstractAsyncContextManager
 from types import TracebackType
-from typing import Any, Optional, Type
+from typing import Any, Optional
 
 __all__ = ["asyncnullcontext"]
 
@@ -20,7 +20,7 @@ class asyncnullcontext(AbstractAsyncContextManager):
 
     async def __aexit__(
         self,
-        exc_type: Optional[Type[BaseException]] = None,
+        exc_type: Optional[type[BaseException]] = None,
         exc_val: Optional[BaseException] = None,
         exc_tb: Optional[TracebackType] = None,
     ) -> None: ...

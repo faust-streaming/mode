@@ -4,7 +4,8 @@ Works like a service, but delegates to underlying service object.
 """
 
 import abc
-from typing import Any, AsyncContextManager, ContextManager, Optional
+from contextlib import AbstractAsyncContextManager, AbstractContextManager
+from typing import Any, Optional
 
 from .services import ServiceBase
 from .types import ServiceT
@@ -44,10 +45,12 @@ class ServiceProxy(ServiceBase):
     async def add_runtime_dependency(self, service: ServiceT) -> ServiceT:
         return await self._service.add_runtime_dependency(service)
 
-    async def add_async_context(self, context: AsyncContextManager) -> Any:
+    async def add_async_context(
+        self, context: AbstractAsyncContextManager
+    ) -> Any:
         return await self._service.add_async_context(context)
 
-    def add_context(self, context: ContextManager) -> Any:
+    def add_context(self, context: AbstractContextManager) -> Any:
         return self._service.add_context(context)
 
     async def start(self) -> None:

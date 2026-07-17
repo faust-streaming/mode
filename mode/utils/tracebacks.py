@@ -4,19 +4,10 @@ import asyncio
 import inspect
 import io
 import sys
+from collections.abc import AsyncGenerator, Coroutine, Generator, Mapping
 from traceback import StackSummary, print_list, walk_tb
 from types import FrameType, TracebackType
-from typing import (
-    IO,
-    Any,
-    AsyncGenerator,
-    Coroutine,
-    Generator,
-    Mapping,
-    Optional,
-    Union,
-    cast,
-)
+from typing import IO, Any, Optional, Union, cast
 
 __all__ = ["Traceback", "format_task_stack", "print_task_stack"]
 

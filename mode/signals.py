@@ -2,21 +2,10 @@
 
 import asyncio
 from collections import defaultdict
+from collections.abc import Iterable, Mapping, MutableSet
 from functools import partial
 from types import MethodType
-from typing import (
-    Any,
-    Callable,
-    Iterable,
-    Mapping,
-    MutableSet,
-    Optional,
-    Set,
-    Tuple,
-    Type,
-    cast,
-    no_type_check,
-)
+from typing import Any, Callable, Optional, Union, cast, no_type_check
 from weakref import ReferenceType, WeakMethod, ref
 
 from .types.signals import (
@@ -27,7 +16,6 @@ from .types.signals import (
     SignalT,
     SyncSignalT,
     T,
-    T_contra,
 )
 from .utils.futures import maybe_async
 
@@ -44,11 +32,11 @@ class BaseSignal(BaseSignalT[T]):
         self,
         *,
         name: Optional[str] = None,
-        owner: Optional[Type] = None,
+        owner: Optional[type] = None,
         loop: Optional[asyncio.AbstractEventLoop] = None,
         default_sender: Any = None,
         receivers: Optional[MutableSet[SignalHandlerRefT]] = None,
-        filter_receivers: FilterReceiverMapping = None,
+        filter_receivers: Union[FilterReceiverMapping, None] = None,
     ) -> None:
         self.name = name or ""
         self.owner = owner
@@ -85,7 +73,7 @@ class BaseSignal(BaseSignalT[T]):
             filter_receivers=self._filter_receivers,
         )
 
-    def __set_name__(self, owner: Type, name: str) -> None:
+    def __set_name__(self, owner: type, name: str) -> None:
         """If signal is an attribute of a class, we use __set_name__ to show the location of the signal in __repr__.
 
         Examples:
@@ -95,25 +83,28 @@ class BaseSignal(BaseSignalT[T]):
             starting = Signal()
 
         >>> X.starting
-        <Signal: X.strting>
+        <Signal: X.string>
         ```
         """
         if not self.name:
             self.name = name
         self.owner = owner
 
-    def unpack_sender_from_args(self, *args: Any) -> Tuple[T, Tuple[Any, ...]]:
+    def unpack_sender_from_args(self, *args: Any) -> tuple[T, tuple[Any, ...]]:
         sender = self.default_sender
         if sender is None:
-            if not args:
+            if not args or len(args) == 0:
                 raise TypeError("Signal.send requires at least one argument")
+
             if len(args) > 1:
                 sender, *args = args  # type: ignore
             else:
                 sender, args = args[0], ()
         return sender, args
 
-    def connect(self, fun: SignalHandlerT = None, **kwargs: Any) -> Callable:
+    def connect(
+        self, fun: Union[SignalHandlerT, None] = None, **kwargs: Any
+    ) -> Callable:
         if fun is not None:
             return self._connect(fun, **kwargs)
         return partial(self._connect, **kwargs)
@@ -145,7 +136,7 @@ class BaseSignal(BaseSignalT[T]):
             except ValueError:
                 pass
 
-    def iter_receivers(self, sender: T_contra) -> Iterable[SignalHandlerT]:
+    def iter_receivers(self, sender: object) -> Iterable[SignalHandlerT]:
         if self._receivers or self._filter_receivers:
             r = self._update_receivers(self._receivers)
             if sender is not None:
@@ -157,7 +148,7 @@ class BaseSignal(BaseSignalT[T]):
 
     def _update_receivers(
         self, r: MutableSet[SignalHandlerRefT]
-    ) -> Set[SignalHandlerT]:
+    ) -> set[SignalHandlerT]:
         live_receivers, dead_refs = self._get_live_receivers(r)
         for href in dead_refs:
             r.discard(href)
@@ -165,9 +156,9 @@ class BaseSignal(BaseSignalT[T]):
 
     def _get_live_receivers(
         self, r: MutableSet[SignalHandlerRefT]
-    ) -> Tuple[Set[SignalHandlerT], Set[SignalHandlerRefT]]:
-        live_receivers: Set[SignalHandlerT] = set()
-        dead_refs: Set[SignalHandlerRefT] = set()
+    ) -> tuple[set[SignalHandlerT], set[SignalHandlerRefT]]:
+        live_receivers: set[SignalHandlerT] = set()
+        dead_refs: set[SignalHandlerRefT] = set()
         for href in r:
             alive, value = self._is_alive(href)
             if alive and value is not None:
@@ -178,7 +169,7 @@ class BaseSignal(BaseSignalT[T]):
 
     def _is_alive(
         self, ref: SignalHandlerRefT
-    ) -> Tuple[bool, Optional[SignalHandlerT]]:
+    ) -> tuple[bool, Optional[SignalHandlerT]]:
         if isinstance(ref, ReferenceType):
             value = ref()
             return value is not None, value
