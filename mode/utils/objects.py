@@ -4,32 +4,31 @@ import abc
 import collections.abc
 import sys
 import typing
+from collections.abc import (
+    Iterable,
+    Mapping,
+    MutableMapping,
+    MutableSequence,
+    MutableSet,
+    Sequence,
+    Set,
+)
 from contextlib import suppress
 from decimal import Decimal
 from functools import total_ordering
 from pathlib import Path
 from typing import (
-    AbstractSet,
     Any,
     Callable,
     ClassVar,
-    Dict,
     ForwardRef,
-    FrozenSet,
     Generic,
-    Iterable,
-    List,
-    Mapping,
-    MutableMapping,
-    MutableSequence,
-    MutableSet,
     Optional,
-    Sequence,
-    Set,
-    Tuple,
-    Type,
     TypeVar,
     cast,
+    get_args,
+    get_origin,
+    get_type_hints,
 )
 
 try:
@@ -48,19 +47,16 @@ except ImportError:
         return arg
 
 
-try:
-    from typing import _ClassVar  # type: ignore
-except ImportError:  # pragma: no cover
-    # CPython 3.7
-    from typing import _GenericAlias  # type: ignore
+def _is_class_var(typ):
+    # Works for typing.ClassVar and types.GenericAlias (Python 3.9+)
+    origin = getattr(typ, "__origin__", None)
+    return origin is ClassVar
 
-    def _is_class_var(x: Any) -> bool:
-        return isinstance(x, _GenericAlias) and x.__origin__ is ClassVar
 
-else:  # pragma: no cover
-    # CPython 3.6
-    def _is_class_var(x: Any) -> bool:
-        return type(x) is _ClassVar
+def _get_globalns(cls):
+    # Get the global namespace for a class
+    module = sys.modules.get(cls.__module__)
+    return module.__dict__ if module else {}
 
 
 __all__ = [
@@ -108,33 +104,41 @@ _T = TypeVar("_T")
 RT = TypeVar("RT")
 
 #: Mapping of attribute name to attribute type.
-FieldMapping = Mapping[str, Type]
+FieldMapping = Mapping[str, type]
 
 #: Mapping of attribute name to attributes default value.
 DefaultsMapping = Mapping[str, Any]
 
-SET_TYPES: Tuple[Type, ...] = (
-    AbstractSet,
-    FrozenSet,
-    MutableSet,
+SET_TYPES: tuple[type, ...] = (
     Set,
+    frozenset,
+    MutableSet,
+    set,
     collections.abc.Set,
 )
-LIST_TYPES: Tuple[Type, ...] = (
-    List,
+LIST_TYPES: tuple[type, ...] = (
+    list,
     Sequence,
     MutableSequence,
     collections.abc.Sequence,
 )
-DICT_TYPES: Tuple[Type, ...] = (
-    Dict,
+DICT_TYPES: tuple[type, ...] = (
+    dict,
     Mapping,
     MutableMapping,
     collections.abc.Mapping,
 )
 # XXX cast required for mypy bug
 # "expression has type Tuple[_SpecialForm]"
-TUPLE_TYPES: Tuple[Type, ...] = cast(Tuple[Type, ...], (Tuple,))
+TUPLE_TYPES: tuple[type, ...] = cast(tuple[type, ...], (tuple,))
+
+
+if sys.version_info >= (3, 10):
+    import types
+
+    UNION_TYPES = (typing.Union, types.UnionType)
+else:
+    UNION_TYPES = (typing.Union,)
 
 
 class InvalidAnnotation(Exception):
@@ -158,7 +162,7 @@ class Unordered(Generic[_T]):
         return f"<{type(self).__name__}: {self.value!r}>"
 
 
-def _restore_from_keywords(typ: Type, kwargs: Dict) -> Any:
+def _restore_from_keywords(typ: type, kwargs: dict) -> Any:
     # This function is used to restore pickled KeywordReduce object.
     return typ(**kwargs)
 
@@ -206,7 +210,7 @@ class KeywordReduce:
     def __reduce_keywords__(self) -> Mapping:
         raise NotImplementedError()
 
-    def __reduce__(self) -> Tuple:
+    def __reduce__(self) -> tuple:
         return _restore_from_keywords, (type(self), self.__reduce_keywords__())
 
 
@@ -261,16 +265,30 @@ def _detect_main_name() -> str:  # pragma: no cover
         return ".".join([*seen, path.stem])
 
 
+def _normalize_forwardref(t):
+    if isinstance(t, str):
+        return t
+    origin = getattr(t, "__origin__", None)
+    args = getattr(t, "__args__", None)
+    if origin and args:
+        if origin is ClassVar:
+            return origin[_normalize_forwardref(args[0])]
+        return origin[tuple(_normalize_forwardref(a) for a in args)]
+    if hasattr(t, "__qualname__") and "<locals>" in t.__qualname__:
+        return t.__name__
+    return t
+
+
 def annotations(
-    cls: Type,
+    cls: type,
     *,
-    stop: Type = object,
-    invalid_types: Optional[Set] = None,
+    stop: type = object,
+    invalid_types: Optional[set] = None,
     alias_types: Optional[Mapping] = None,
     skip_classvar: bool = False,
-    globalns: Optional[Dict[str, Any]] = None,
-    localns: Optional[Dict[str, Any]] = None,
-) -> Tuple[FieldMapping, DefaultsMapping]:
+    globalns: Optional[dict[str, Any]] = None,
+    localns: Optional[dict[str, Any]] = None,
+) -> tuple[FieldMapping, DefaultsMapping]:
     """Get class field definition in MRO order.
 
     Arguments:
@@ -314,8 +332,8 @@ def annotations(
     {'z': 0.0}
     ```
     """
-    fields: Dict[str, Type] = {}
-    defaults: Dict[str, Any] = {}
+    fields: dict[str, type] = {}
+    defaults: dict[str, Any] = {}
     for subcls in iter_mro_reversed(cls, stop=stop):
         defaults.update(subcls.__dict__)
         with suppress(AttributeError):
@@ -329,20 +347,28 @@ def annotations(
                     localns=localns,
                 )
             )
-    return fields, defaults
+
+    # Normalize all field types for forward refs
+    normalized_fields = {
+        k: _normalize_forwardref(v) for k, v in fields.items()
+    }
+    return normalized_fields, defaults
 
 
 def local_annotations(
-    cls: Type,
+    cls: type,
     *,
-    invalid_types: Optional[Set] = None,
+    invalid_types: Optional[set] = None,
     alias_types: Optional[Mapping] = None,
     skip_classvar: bool = False,
-    globalns: Optional[Dict[str, Any]] = None,
-    localns: Optional[Dict[str, Any]] = None,
-) -> Iterable[Tuple[str, Type]]:
+    globalns: Optional[dict[str, Any]] = None,
+    localns: Optional[dict[str, Any]] = None,
+) -> Iterable[tuple[str, type]]:
+    d = get_type_hints(
+        cls, globalns if globalns is not None else _get_globalns(cls), localns
+    )
     return _resolve_refs(
-        cls.__annotations__,
+        d,
         globalns if globalns is not None else _get_globalns(cls),
         localns,
         invalid_types or set(),
@@ -352,13 +378,13 @@ def local_annotations(
 
 
 def _resolve_refs(
-    d: Dict[str, Any],
-    globalns: Optional[Dict[str, Any]] = None,
-    localns: Optional[Dict[str, Any]] = None,
-    invalid_types: Optional[Set] = None,
+    d: dict[str, Any],
+    globalns: Optional[dict[str, Any]] = None,
+    localns: Optional[dict[str, Any]] = None,
+    invalid_types: Optional[set] = None,
     alias_types: Optional[Mapping] = None,
     skip_classvar: bool = False,
-) -> Iterable[Tuple[str, Type]]:
+) -> Iterable[tuple[str, type]]:
     invalid_types = invalid_types or set()
     alias_types = alias_types or {}
     for k, v in d.items():
@@ -371,11 +397,11 @@ def _resolve_refs(
 
 def eval_type(
     typ: Any,
-    globalns: Optional[Dict[str, Any]] = None,
-    localns: Optional[Dict[str, Any]] = None,
-    invalid_types: Optional[Set] = None,
+    globalns: Optional[dict[str, Any]] = None,
+    localns: Optional[dict[str, Any]] = None,
+    invalid_types: Optional[set] = None,
     alias_types: Optional[Mapping] = None,
-) -> Type:
+) -> type:
     """Convert (possible) string annotation to actual type.
 
     Examples:
@@ -399,9 +425,9 @@ def eval_type(
 
 def _ForwardRef_safe_eval(
     ref: ForwardRef,
-    globalns: Optional[Dict[str, Any]] = None,
-    localns: Optional[Dict[str, Any]] = None,
-) -> Type:
+    globalns: Optional[dict[str, Any]] = None,
+    localns: Optional[dict[str, Any]] = None,
+) -> type:
     # On 3.6/3.7 ForwardRef._evaluate crashes if str references ClassVar
     if not ref.__forward_evaluated__:
         if globalns is None and localns is None:
@@ -420,11 +446,7 @@ def _ForwardRef_safe_eval(
     return ref.__forward_value__
 
 
-def _get_globalns(typ: Type) -> Dict[str, Any]:
-    return sys.modules[typ.__module__].__dict__
-
-
-def iter_mro_reversed(cls: Type, stop: Type) -> Iterable[Type]:
+def iter_mro_reversed(cls: type, stop: type) -> Iterable[type]:
     """Iterate over superclasses, in reverse Method Resolution Order.
 
     The stop argument specifies a base class that when seen will
@@ -458,82 +480,66 @@ def iter_mro_reversed(cls: Type, stop: Type) -> Iterable[Type]:
     wanted = False
     for subcls in reversed(cls.__mro__):
         if wanted:
-            yield cast(Type, subcls)
+            yield cast(type, subcls)
         else:
             wanted = subcls == stop
 
 
-def remove_optional(typ: Type) -> Type:
+def remove_optional(typ: type) -> type:
     _, typ = _remove_optional(typ)
     return typ
 
 
-def is_union(typ: Type) -> bool:
-    name = typ.__class__.__name__
-    return any(
-        [
-            name == "UnionType",  # 3.10
-            name == "_UnionGenericAlias",  # 3.9
-            name == "_GenericAlias" and typ.__origin__ is typing.Union,  # 3.7
-            name == "_Union",  # 3.6
-        ]
-    )
+def is_union(typ: type) -> bool:
+    return get_origin(typ) in UNION_TYPES
 
 
-def is_optional(typ: Type) -> bool:
-    if is_union(typ):
-        args = getattr(typ, "__args__", ())
-        return any(True for arg in args if arg is None or arg is type(None))
+def is_optional(typ: type) -> bool:
+    origin = get_origin(typ)
+    if origin in UNION_TYPES:
+        args = get_args(typ)
+        return any(arg is type(None) for arg in args)
     return False
 
 
-def _remove_optional(
-    typ: Type, *, find_origin: bool = False
-) -> Tuple[List[Any], Type]:
-    args = getattr(typ, "__args__", ())
-    if is_union(typ):
-        # Optional[List[int]] -> Union[List[int], NoneType]
-        # returns: ((int,), list)
-        found_None = False
-        union_type_args: Optional[List] = None
-        union_type: Optional[Type] = None
-        for arg in args:
-            if arg is None or arg is type(None):
-                found_None = True
-            else:
-                union_type_args = getattr(arg, "__args__", ())
-                union_type = arg
-                if find_origin:
-                    if union_type is not None and sys.version_info.minor == 6:
-                        union_type = _py36_maybe_unwrap_GenericMeta(union_type)
-                    else:
-                        union_type = getattr(arg, "__origin__", arg)
-        if union_type is not None and found_None:
-            return cast(List, union_type_args), union_type
+def _remove_optional(typ: type, *, find_origin: bool = False) -> Any:
+    origin = get_origin(typ)
+    args = get_args(typ)
+    if origin in UNION_TYPES:
+        non_none_args = [arg for arg in args if arg is not type(None)]
+        if len(non_none_args) == 1:
+            typ = non_none_args[0]
+            origin = get_origin(typ)
+            args = get_args(typ)
+        else:
+            # If multiple non-None args, treat as a union
+            typ = typing.Union[tuple(non_none_args)]
+            origin = get_origin(typ)
+            args = get_args(typ)
     if find_origin:
-        if hasattr(typ, "__origin__"):
-            # List[int] -> ((int,), list)
-            typ = _py36_maybe_unwrap_GenericMeta(typ)
-
+        if origin is None:
+            return (), typ
+        else:
+            return args, origin
     return args, typ
 
 
-def _py36_maybe_unwrap_GenericMeta(typ: Type) -> Type:
+def _py36_maybe_unwrap_GenericMeta(typ: type) -> type:
     if typ.__class__.__name__ == "GenericMeta":  # Py3.6
         orig_bases = typ.__orig_bases__
         if orig_bases and orig_bases[0] in (list, tuple, dict, set):
-            return cast(Type, orig_bases[0])
-    return cast(Type, getattr(typ, "__origin__", typ))
+            return cast(type, orig_bases[0])
+    return cast(type, getattr(typ, "__origin__", typ))
 
 
 def guess_polymorphic_type(
-    typ: Type,
+    typ: type,
     *,
-    set_types: Tuple[Type, ...] = SET_TYPES,
-    list_types: Tuple[Type, ...] = LIST_TYPES,
-    tuple_types: Tuple[Type, ...] = TUPLE_TYPES,
-    dict_types: Tuple[Type, ...] = DICT_TYPES,
-) -> Tuple[Type, Type]:
+    set_types: tuple[type, ...] = SET_TYPES,
+    list_types: tuple[type, ...] = LIST_TYPES,
+    tuple_types: tuple[type, ...] = TUPLE_TYPES,
+    dict_types: tuple[type, ...] = DICT_TYPES,
+) -> tuple[type, type]:
     """Try to find the polymorphic and concrete type of an abstract type.
 
     Returns tuple of `(polymorphic_type, concrete_type)`.
@@ -544,7 +550,7 @@ def guess_polymorphic_type(
     >>> guess_polymorphic_type(List[int])
     (list, int)
 
-    >>> guess_polymorphic_type(Optional[List[int]])
+    >>> guess_polymorphic_type(Optional[list[int]])
     (list, int)
 
     >>> guess_polymorphic_type(MutableMapping[int, str])
@@ -560,7 +566,7 @@ def guess_polymorphic_type(
             # Set[x]
             return set, _unary_type_arg(args)
         elif issubclass(typ, list_types):
-            # List[x]
+            # list[x]
             return list, _unary_type_arg(args)
         elif issubclass(typ, dict_types):
             # Dict[_, x]
@@ -571,7 +577,7 @@ def guess_polymorphic_type(
 guess_concrete_type = guess_polymorphic_type  # XXX compat
 
 
-def _unary_type_arg(args: List[Type]) -> Any:
+def _unary_type_arg(args: list[type]) -> Any:
     return args[0] if args else Any
 
 
@@ -588,8 +594,8 @@ def shortlabel(s: Any) -> str:
 def _label(
     label_attr: str,
     s: Any,
-    pass_types: Tuple[Type, ...] = (str,),
-    str_types: Tuple[Type, ...] = (str, int, float, Decimal),
+    pass_types: tuple[type, ...] = (str,),
+    str_types: tuple[type, ...] = (str, int, float, Decimal),
 ) -> str:
     if isinstance(s, pass_types):
         return cast(str, s)
@@ -651,7 +657,7 @@ class cached_property(Generic[RT]):
     def is_set(self, obj: Any) -> bool:
         return self.__name__ in obj.__dict__
 
-    def __get__(self, obj: Any, type: Optional[Type] = None) -> RT:
+    def __get__(self, obj: Any, type: Optional[type] = None) -> RT:
         if obj is None:
             if type is not None and self.class_attribute:
                 return cast(RT, getattr(type, self.class_attribute))

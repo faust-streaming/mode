@@ -1,7 +1,9 @@
 """Data structure: Trees."""
 
+from collections import deque
+from collections.abc import Iterator
 from contextlib import suppress
-from typing import Any, Deque, Iterator, List, Optional, TypeVar, Union, cast
+from typing import Any, Optional, TypeVar, Union, cast
 
 from .graphs import DependencyGraph
 from .objects import shortlabel
@@ -46,9 +48,9 @@ class Node(NodeT[T]):
         self,
         data: T,
         *,
-        root: NodeT = None,
-        parent: NodeT = None,
-        children: Optional[List[NodeT[T]]] = None,
+        root: Optional[NodeT] = None,
+        parent: Optional[NodeT] = None,
+        children: Optional[list[NodeT[T]]] = None,
     ) -> None:
         self.data = data
         if root is not None:
@@ -98,7 +100,7 @@ class Node(NodeT[T]):
 
     def traverse(self) -> Iterator[NodeT[T]]:
         """Iterate over the tree in BFS order."""
-        stack: Deque[NodeT[T]] = Deque([self])
+        stack: deque[NodeT[T]] = deque([self])
         while stack:
             node = stack.popleft()
             yield node
@@ -121,7 +123,7 @@ class Node(NodeT[T]):
     def as_graph(self) -> DependencyGraphT:
         """Convert to `~mode.utils.graphs.DependencyGraph`."""
         graph = DependencyGraph()
-        stack: Deque[NodeT] = Deque([self])
+        stack: deque[NodeT] = deque([self])
         while stack:
             node = stack.popleft()
             for child in node.children:

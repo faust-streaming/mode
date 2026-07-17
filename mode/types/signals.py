@@ -3,18 +3,8 @@
 import abc
 import asyncio
 import typing
-from typing import (
-    Any,
-    Awaitable,
-    Callable,
-    Generic,
-    MutableMapping,
-    MutableSet,
-    Optional,
-    Type,
-    TypeVar,
-    Union,
-)
+from collections.abc import Awaitable, MutableMapping, MutableSet
+from typing import Any, Callable, Generic, Optional, TypeVar, Union
 
 from mypy_extensions import KwArg, NamedArg, VarArg
 
@@ -50,14 +40,14 @@ class BaseSignalT(Generic[T]):
     """Base type for all signals."""
 
     name: str
-    owner: Optional[Type]
+    owner: Optional[type]
 
     @abc.abstractmethod
     def __init__(
         self,
         *,
         name: Optional[str] = None,
-        owner: Optional[Type] = None,
+        owner: Optional[type] = None,
         loop: Optional[asyncio.AbstractEventLoop] = None,
         default_sender: Any = None,
         receivers: Optional[MutableSet[SignalHandlerRefT]] = None,

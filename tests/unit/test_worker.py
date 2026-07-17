@@ -379,7 +379,7 @@ class test_Worker:
     async def test__add_monitor(self, worker):
         worker.add_context = Mock()
         with patch_module("aiomonitor"):
-            import aiomonitor
+            import aiomonitor  # type: ignore
 
             await worker._add_monitor()
 

@@ -4,17 +4,7 @@ import asyncio
 import math
 import typing
 from collections import deque
-from typing import (
-    Any,
-    Callable,
-    Deque,
-    List,
-    Optional,
-    Set,
-    TypeVar,
-    cast,
-    no_type_check,
-)
+from typing import Any, Callable, Optional, TypeVar, cast, no_type_check
 from weakref import WeakSet
 
 from .locks import Event
@@ -124,7 +114,7 @@ class FlowControlQueue(asyncio.Queue):
     pressure_high_ratio = 1.25  # divided by
     pressure_drop_ratio = 0.40  # multiplied by
 
-    _pending_pressure_drop_callbacks: Set[Callable]
+    _pending_pressure_drop_callbacks: set[Callable]
 
     def __init__(
         self,
@@ -225,9 +215,9 @@ class ThrowableQueue(FlowControlQueue):
     """Queue that can be notified of errors."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self._putters: List[asyncio.Future]
+        self._putters: list[asyncio.Future]
         super().__init__(*args, **kwargs)
-        self._errors: Deque[BaseException] = deque()
+        self._errors: deque[BaseException] = deque()
 
     @typing.no_type_check
     async def get(self) -> _T:

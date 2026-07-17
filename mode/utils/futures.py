@@ -2,7 +2,7 @@
 
 import asyncio
 from inspect import isawaitable
-from typing import Any, Callable, NoReturn, Optional, Set, Type, Union
+from typing import Any, Callable, NoReturn, Optional, Union
 
 # These used to be here, now moved to .queues
 from .queues import FlowControlEvent, FlowControlQueue  # noqa: F401
@@ -11,7 +11,7 @@ try:  # pragma: no cover
     from asyncio import all_tasks  # type: ignore
 except ImportError:  # pragma: no cover
 
-    def all_tasks(loop: asyncio.AbstractEventLoop) -> Set[asyncio.Task]:
+    def all_tasks(loop: asyncio.AbstractEventLoop) -> set[asyncio.Task]:
         return asyncio.Task.all_tasks(loop=loop)
 
 
@@ -108,7 +108,7 @@ class stampede:
         # here to support inspect.signature
         raise NotImplementedError()
 
-    def __get__(self, obj: Any, type: Optional[Type] = None) -> Any:
+    def __get__(self, obj: Any, type: Optional[type] = None) -> Any:
         if obj is None:
             return self
         try:

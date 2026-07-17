@@ -1,7 +1,8 @@
 """Text and string manipulation utilities."""
 
+from collections.abc import Iterable, Iterator
 from difflib import SequenceMatcher
-from typing import IO, AnyStr, Iterable, Iterator, NamedTuple, Optional, Union
+from typing import IO, AnyStr, NamedTuple, Optional, Union
 
 __all__ = [
     "FuzzyMatch",

@@ -1,21 +1,15 @@
 """Data structure: Dependency graph."""
 
-from functools import partial
-from typing import (
-    IO,
-    Any,
-    Callable,
-    Counter,
+from collections import Counter
+from collections.abc import (
     ItemsView,
     Iterable,
     Iterator,
-    List,
     MutableMapping,
-    Optional,
     Sequence,
-    Set,
-    cast,
 )
+from functools import partial
+from typing import IO, Any, Callable, Optional, cast
 
 from mode.utils.types.graphs import _T, DependencyGraphT, GraphFormatterT
 
@@ -44,14 +38,14 @@ class DependencyGraph(DependencyGraphT):
     def __init__(
         self,
         it: Optional[Iterable] = None,
-        formatter: GraphFormatterT[_T] = None,
+        formatter: Optional[GraphFormatterT[_T]] = None,
     ) -> None:
         self.formatter = formatter or GraphFormatter()
         self.adjacent = {}
         if it is not None:
             self.update(it)
 
-    def add_arc(self, obj: _T) -> None:
+    def add_arc(self, obj: object) -> None:
         """Add an object to the graph."""
         self.adjacent.setdefault(obj, [])
 
@@ -88,7 +82,7 @@ class DependencyGraph(DependencyGraphT):
                     graph.add_edge(node_c, successor_c)
         return [t[0] for t in graph._khan62()]
 
-    def valency_of(self, obj: _T) -> int:
+    def valency_of(self, obj: object) -> int:
         """Return the valency (degree) of a vertex in the graph."""
         try:
             sizes = [len(self[obj])]
@@ -141,9 +135,9 @@ class DependencyGraph(DependencyGraphT):
         See Also:
             :wikipedia:`Tarjan%27s_strongly_connected_components_algorithm`
         """
-        result: List = []
-        stack: List = []
-        low: List = []
+        result: list = []
+        stack: list = []
+        low: list = []
 
         def visit(node: Any) -> None:
             if node in low:
@@ -169,7 +163,9 @@ class DependencyGraph(DependencyGraphT):
 
         return result
 
-    def to_dot(self, fh: IO, *, formatter: GraphFormatterT[_T] = None) -> None:
+    def to_dot(
+        self, fh: IO, *, formatter: Optional[GraphFormatterT[_T]] = None
+    ) -> None:
         """Convert the graph to DOT format.
 
         Arguments:
@@ -177,7 +173,7 @@ class DependencyGraph(DependencyGraphT):
             formatter (celery.utils.graph.GraphFormatter): Custom graph
                 formatter to use.
         """
-        seen: Set = set()
+        seen: set = set()
         draw = formatter or self.formatter
         write = partial(print, file=fh)
 
@@ -199,13 +195,13 @@ class DependencyGraph(DependencyGraphT):
     def __iter__(self) -> Iterator:
         return iter(self.adjacent)
 
-    def __getitem__(self, node: _T) -> Any:
+    def __getitem__(self, node: object) -> Any:
         return self.adjacent[node]
 
     def __len__(self) -> int:
         return len(self.adjacent)
 
-    def __contains__(self, obj: _T) -> bool:
+    def __contains__(self, obj: object) -> bool:
         return obj in self.adjacent
 
     def items(self) -> ItemsView:
@@ -215,7 +211,7 @@ class DependencyGraph(DependencyGraphT):
         return "\n".join(self._repr_node(N) for N in self)
 
     def _repr_node(
-        self, obj: _T, level: int = 1, fmt: str = "{0}({1})"
+        self, obj: object, level: int = 1, fmt: str = "{0}({1})"
     ) -> str:
         output = [fmt.format(obj, self.valency_of(obj))]
         if obj in self:

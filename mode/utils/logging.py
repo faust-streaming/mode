@@ -8,7 +8,8 @@ import os
 import sys
 import threading
 import traceback
-from contextlib import ExitStack, contextmanager
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import AbstractContextManager, ExitStack, contextmanager
 from functools import singledispatch, wraps
 from itertools import count
 from logging import Logger
@@ -22,19 +23,10 @@ from typing import (
     BinaryIO,
     Callable,
     ClassVar,
-    ContextManager,
-    Dict,
-    Iterable,
-    Iterator,
-    List,
-    Mapping,
     NamedTuple,
     Optional,
     Protocol,
-    Set,
     TextIO,
-    Tuple,
-    Type,
     Union,
     cast,
 )
@@ -108,18 +100,18 @@ def current_flight_recorder() -> Optional["flight_recorder"]:
 
 
 def _logger_config(
-    handlers: List[str], level: Union[str, int] = "INFO"
-) -> Dict:
+    handlers: list[str], level: Union[str, int] = "INFO"
+) -> dict:
     return {"handlers": handlers, "level": level}
 
 
 def create_logconfig(
     version: int = 1,
     disable_existing_loggers: bool = False,
-    formatters: Dict = DEFAULT_FORMATTERS,
-    handlers: Optional[Dict] = None,
-    root: Optional[Dict] = None,
-) -> Dict:
+    formatters: dict = DEFAULT_FORMATTERS,
+    handlers: Optional[dict] = None,
+    root: Optional[dict] = None,
+) -> dict:
     return {
         "version": version,
         # do not disable existing loggers from other modules.
@@ -139,8 +131,8 @@ FormatterHandler = Callable[[Any], Any]
 FormatterHandler2 = Callable[[Any, logging.LogRecord], Any]
 Severity = Union[int, str]
 
-_formatter_registry: Set[FormatterHandler] = set()
-_formatter_registry2: Set[FormatterHandler2] = set()
+_formatter_registry: set[FormatterHandler] = set()
+_formatter_registry2: set[FormatterHandler2] = set()
 
 
 def get_logger(name: str) -> Logger:
@@ -405,8 +397,8 @@ def setup_logging(
     *,
     loglevel: Optional[Union[str, int]] = None,
     logfile: Optional[Union[str, IO]] = None,
-    loghandlers: Optional[List[logging.Handler]] = None,
-    logging_config: Optional[Dict] = None,
+    loghandlers: Optional[list[logging.Handler]] = None,
+    logging_config: Optional[dict] = None,
 ) -> int:
     """Configure logging subsystem."""
     stream: Optional[IO] = None
@@ -438,8 +430,8 @@ def _setup_logging(
     level: Optional[Union[int, str]] = None,
     filename: Optional[str] = None,
     stream: Optional[IO] = None,
-    loghandlers: Optional[List[logging.Handler]] = None,
-    logging_config: Optional[Dict] = None,
+    loghandlers: Optional[list[logging.Handler]] = None,
+    logging_config: Optional[dict] = None,
 ) -> None:
     handlers = {}
     if filename:
@@ -489,7 +481,7 @@ class Logwrapped:
     severity: int
     ident: str
 
-    _ignore: ClassVar[Set[str]] = {"__enter__", "__exit__"}
+    _ignore: ClassVar[set[str]] = {"__enter__", "__exit__"}
 
     def __init__(
         self,
@@ -534,7 +526,7 @@ class Logwrapped:
     def __repr__(self) -> str:
         return repr(self.obj)
 
-    def __dir__(self) -> List[str]:
+    def __dir__(self) -> list[str]:
         return dir(self.obj)
 
 
@@ -605,11 +597,11 @@ class LogMessage(NamedTuple):
     severity: int
     message: str
     asctime: str
-    args: Tuple[Any, ...]
-    kwargs: Dict[str, Any]
+    args: tuple[Any, ...]
+    kwargs: dict[str, Any]
 
 
-class flight_recorder(ContextManager, LogSeverityMixin):
+class flight_recorder(AbstractContextManager, LogSeverityMixin):
     """Flight Recorder context for use with `with` statement.
 
     This is a logging utility to log stuff only when something
@@ -681,11 +673,11 @@ class flight_recorder(ContextManager, LogSeverityMixin):
     loop: asyncio.AbstractEventLoop
     started_at_date: Optional[str]
     enabled_by: Optional[asyncio.Task]
-    extra_context: Dict[str, Any]
+    extra_context: dict[str, Any]
 
     _fut: Optional[asyncio.Future]
-    _logs: List[LogMessage]
-    _default_context: Dict[str, Any]
+    _logs: list[LogMessage]
+    _default_context: dict[str, Any]
 
     def __init__(
         self,
@@ -802,7 +794,7 @@ class flight_recorder(ContextManager, LogSeverityMixin):
             finally:
                 logs.clear()
 
-    def _fill_extra_context(self, kwargs: Dict) -> None:
+    def _fill_extra_context(self, kwargs: dict) -> None:
         if self.extra_context:
             extra = kwargs["extra"] = kwargs.get("extra") or {}
             extra["data"] = {**self.extra_context, **(extra.get("data") or {})}
@@ -821,7 +813,7 @@ class flight_recorder(ContextManager, LogSeverityMixin):
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]] = None,
+        exc_type: Optional[type[BaseException]] = None,
         exc_val: Optional[BaseException] = None,
         exc_tb: Optional[TracebackType] = None,
     ) -> Optional[bool]:
@@ -940,7 +932,7 @@ class FileLogProxy(TextIO):
     def readline(self, limit: int = -1) -> AnyStr:
         raise NotImplementedError()
 
-    def readlines(self, hint: int = -1) -> List[AnyStr]:
+    def readlines(self, hint: int = -1) -> list[AnyStr]:
         raise NotImplementedError()
 
     def seek(self, offset: int, whence: int = 0) -> int:
@@ -969,7 +961,7 @@ class FileLogProxy(TextIO):
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]] = None,
+        exc_type: Optional[type[BaseException]] = None,
         exc_val: Optional[BaseException] = None,
         exc_tb: Optional[TracebackType] = None,
     ) -> Optional[bool]: ...

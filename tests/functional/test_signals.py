@@ -191,7 +191,7 @@ class test_BaseSignal:
         sig.disconnect(Mock(), sender=Mock())
 
     def test_iter_receivers(self, sig):
-        receivers, alive_refs, dead_refs = self.create_refs(sig)
+        receivers, alive_refs, _dead_refs = self.create_refs(sig)
         sig._receivers = receivers
         sig._live_receivers = set()
         sig._update_receivers = Mock(return_value=alive_refs)
@@ -203,8 +203,8 @@ class test_BaseSignal:
         assert list(sig.iter_receivers(None)) == []
 
     def test__get_live_receivers(self, sig):
-        receivers, alive_refs, dead_refs = self.create_refs(sig)
-        alive, dead = sig._get_live_receivers(receivers)
+        receivers, alive_refs, _dead_refs = self.create_refs(sig)
+        sig._get_live_receivers(receivers)
         sig._update_receivers(receivers)
         assert receivers == set(alive_refs)
 

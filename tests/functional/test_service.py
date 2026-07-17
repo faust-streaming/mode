@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import AsyncContextManager, ContextManager
+from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from unittest.mock import Mock
 
 import pytest
@@ -12,7 +12,7 @@ from mode.utils.locks import Event
 class X(mode.Service): ...
 
 
-class Context(ContextManager):
+class Context(AbstractContextManager):
     acquires = 0
     releases = 0
 
@@ -24,7 +24,7 @@ class Context(ContextManager):
         self.releases += 1
 
 
-class AsyncContext(AsyncContextManager):
+class AsyncContext(AbstractAsyncContextManager):
     acquires = 0
     releases = 0
 

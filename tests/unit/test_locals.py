@@ -1,6 +1,5 @@
 import abc
-from typing import (
-    AbstractSet,
+from collections.abc import (
     AsyncGenerator,
     AsyncIterable,
     AsyncIterator,
@@ -10,6 +9,7 @@ from typing import (
     MutableSequence,
     MutableSet,
     Sequence,
+    Set,
 )
 from unittest.mock import MagicMock, Mock
 
@@ -61,7 +61,8 @@ class test_Proxy:
 
         assert x.__doc__ == "real function"
 
-        assert x.__class__ is type(real)
+        assert x.__class__ == type(real)  # noqa: E721
+
         assert x.__dict__ == real.__dict__
         assert repr(x) == repr(real)
         assert x.__module__
@@ -467,7 +468,7 @@ class test_SetProxy:
         return SetProxy(lambda: orig)
 
     def test_type(self, *, s):
-        assert isinstance(s, AbstractSet)
+        assert isinstance(s, Set)
 
     def test_contains(self, *, s):
         assert 1 in s

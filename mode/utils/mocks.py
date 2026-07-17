@@ -4,9 +4,10 @@ import builtins
 import sys
 import types
 import unittest.mock
+from collections.abc import Iterator
 from contextlib import contextmanager
 from types import ModuleType
-from typing import Any, Iterator, cast
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 __all__ = ["IN", "call", "mask_module", "patch_module"]

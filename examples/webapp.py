@@ -1,5 +1,5 @@
 # This is code for the tutorial in README.md
-from typing import Any, List, MutableMapping
+from typing import Any, List, MutableMapping, Optional
 
 from aiohttp.web import Application
 
@@ -95,7 +95,7 @@ class App(Service):
     def __init__(
         self,
         web_port: int = 8000,
-        web_bind: str = None,
+        web_bind: Optional[str] = None,
         websocket_port: int = 8001,
         **kwargs: Any
     ) -> None:

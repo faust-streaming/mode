@@ -11,23 +11,10 @@ import reprlib
 import signal
 import sys
 import traceback
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager, suppress
 from logging import Handler, Logger
-from typing import (
-    IO,
-    Any,
-    Callable,
-    ClassVar,
-    Dict,
-    Iterable,
-    Iterator,
-    List,
-    NoReturn,
-    Optional,
-    Tuple,
-    Union,
-    cast,
-)
+from typing import IO, Any, Callable, ClassVar, NoReturn, Optional, Union, cast
 
 from .debug import BlockingDetector
 from .services import Service
@@ -48,7 +35,7 @@ BLOCK_DETECTOR = "mode.debug:BlockingDetector"
 
 
 class _TupleAsListRepr(reprlib.Repr):
-    def repr_tuple(self, x: Tuple, level: int) -> str:
+    def repr_tuple(self, x: tuple, level: int) -> str:
         return self.repr_list(cast(list, x), level)
 
 
@@ -83,11 +70,11 @@ class Worker(Service):
     debug: bool
     quiet: bool
     blocking_timeout: Seconds
-    logging_config: Optional[Dict]
+    logging_config: Optional[dict]
     loglevel: Optional[Union[str, int]]
     logfile: Optional[Union[str, IO]]
     console_port: int
-    loghandlers: List[Handler]
+    loghandlers: list[Handler]
     redirect_stdouts: bool
     redirect_stdouts_level: int
 
@@ -107,15 +94,15 @@ class Worker(Service):
         *services: ServiceT,
         debug: bool = False,
         quiet: bool = False,
-        logging_config: Optional[Dict] = None,
+        logging_config: Optional[dict] = None,
         loglevel: Optional[Union[str, int]] = None,
         logfile: Optional[Union[str, IO]] = None,
         redirect_stdouts: bool = True,
-        redirect_stdouts_level: logging.Severity = None,
+        redirect_stdouts_level: Optional[logging.Severity] = None,
         stdout: Optional[IO] = sys.stdout,
         stderr: Optional[IO] = sys.stderr,
         console_port: int = 50101,
-        loghandlers: Optional[List[Handler]] = None,
+        loghandlers: Optional[list[Handler]] = None,
         blocking_timeout: Seconds = 10.0,
         loop: Optional[asyncio.AbstractEventLoop] = None,
         override_logging: bool = True,
@@ -345,7 +332,7 @@ class Worker(Service):
 
     async def _add_monitor(self) -> Any:
         try:
-            import aiomonitor
+            import aiomonitor  # type: ignore
         except ImportError:
             self.log.warning(
                 "Cannot start console: aiomonitor is not installed"

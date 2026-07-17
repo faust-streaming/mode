@@ -1,17 +1,8 @@
 """Type classes for `mode.utils.graphs`."""
 
 import abc
-from typing import (
-    IO,
-    Any,
-    Generic,
-    Iterable,
-    Mapping,
-    MutableMapping,
-    Optional,
-    Sequence,
-    TypeVar,
-)
+from collections.abc import Iterable, Mapping, MutableMapping, Sequence
+from typing import IO, Any, Generic, Optional, TypeVar
 
 __all__ = ["DependencyGraphT", "GraphFormatterT"]
 
@@ -120,5 +111,5 @@ class DependencyGraphT(Generic[_T], Mapping[_T, _T]):
 
     @abc.abstractmethod
     def to_dot(
-        self, fh: IO, *, formatter: GraphFormatterT[_T] = None
+        self, fh: IO, *, formatter: Optional[GraphFormatterT[_T]] = None
     ) -> None: ...

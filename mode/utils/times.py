@@ -4,19 +4,12 @@ import abc
 import asyncio
 import sys
 import time
+from collections.abc import Mapping
+from contextlib import AbstractAsyncContextManager
 from datetime import timedelta
 from functools import singledispatch
 from types import TracebackType
-from typing import (
-    AsyncContextManager,
-    Callable,
-    List,
-    Mapping,
-    NamedTuple,
-    Optional,
-    Type,
-    Union,
-)
+from typing import Callable, NamedTuple, Optional, Union
 
 from .text import pluralize
 
@@ -47,7 +40,7 @@ class Unit(NamedTuple):
     format: Callable[[float], str]
 
 
-TIME_UNITS: List[Unit] = [
+TIME_UNITS: list[Unit] = [
     Unit("day", 60 * 60 * 24.0, lambda n: format(n, ".2f")),
     Unit("hour", 60 * 60.0, lambda n: format(n, ".2f")),
     Unit("minute", 60.0, lambda n: format(n, ".2f")),
@@ -64,7 +57,7 @@ RATE_MODIFIER_MAP: Mapping[str, Callable[[float], float]] = {
 }
 
 
-class Bucket(AsyncContextManager):
+class Bucket(AbstractAsyncContextManager):
     """Rate limiting state.
 
     A bucket "pours" tokens at a rate of ``rate`` per second (or over').
@@ -125,9 +118,9 @@ class Bucket(AsyncContextManager):
         rate: Seconds,
         over: Seconds = 1.0,
         *,
-        fill_rate: Seconds = None,
-        capacity: Seconds = None,
-        raises: Optional[Type[BaseException]] = None,
+        fill_rate: Optional[Seconds] = None,
+        capacity: Optional[Seconds] = None,
+        raises: Optional[type[BaseException]] = None,
         loop: Optional[asyncio.AbstractEventLoop] = None,
     ) -> None:
         self.rate = want_seconds(rate)
@@ -165,7 +158,7 @@ class Bucket(AsyncContextManager):
 
     async def __aexit__(
         self,
-        exc_type: Optional[Type[BaseException]] = None,
+        exc_type: Optional[type[BaseException]] = None,
         exc_val: Optional[BaseException] = None,
         exc_tb: Optional[TracebackType] = None,
     ) -> Optional[bool]:
@@ -233,8 +226,8 @@ def rate_limit(
     rate: float,
     over: Seconds = 1.0,
     *,
-    bucket_type: Type[Bucket] = TokenBucket,
-    raises: Optional[Type[BaseException]] = None,
+    bucket_type: type[Bucket] = TokenBucket,
+    raises: Optional[type[BaseException]] = None,
     loop: Optional[asyncio.AbstractEventLoop] = None,
 ) -> Bucket:
     """Create rate limiting manager."""

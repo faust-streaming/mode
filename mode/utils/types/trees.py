@@ -1,7 +1,8 @@
 """Type classes for `mode.utils.trees`."""
 
 import abc
-from typing import Any, Generic, Iterator, List, Optional, TypeVar, Union
+from collections.abc import Iterator
+from typing import Any, Generic, Optional, TypeVar, Union
 
 from .graphs import DependencyGraphT
 
@@ -13,7 +14,7 @@ _T = TypeVar("_T")
 class NodeT(Generic[_T]):
     """Node in a tree data structure."""
 
-    children: List[Any]
+    children: list[Any]
     data: Any = None
 
     @classmethod

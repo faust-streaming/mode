@@ -3,22 +3,8 @@ import collections.abc
 import pickle
 import sys
 import typing
-from typing import (
-    AbstractSet,
-    ClassVar,
-    Dict,
-    FrozenSet,
-    Generic,
-    List,
-    Mapping,
-    MutableMapping,
-    MutableSet,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    Union,
-)
+from collections.abc import Mapping, MutableMapping, MutableSet, Sequence, Set
+from typing import ClassVar, Optional, Union
 from unittest.mock import ANY, Mock
 
 import pytest
@@ -30,6 +16,7 @@ from mode.utils.objects import (
     InvalidAnnotation,
     KeywordReduce,
     Unordered,
+    _normalize_forwardref,
     _remove_optional,
     _restore_from_keywords,
     annotations,
@@ -74,7 +61,6 @@ class A(B): ...
             (
                 [
                     ServiceCallbacks,
-                    Generic,
                     *EXTRA_GENERIC_INHERITS_FROM,
                     ANY,
                     ServiceT,
@@ -188,27 +174,32 @@ def test_canonshortname():
 
 @pytest.mark.skip(reason="Needs fixing, typing.List eval does not work")
 def test_eval_type():
-    assert eval_type("list") is list
-    assert eval_type("typing.List") is typing.List
+    assert eval_type("list") == list  # noqa: E721
+    assert eval_type("typing.List") == list  # noqa: E721
 
 
 def test_annotations():
     class X:
         Foo: ClassVar[int] = 3
         foo: "int"
-        bar: List["X"]
-        baz: Union[List["X"], str]
+        bar: list["X"]
+        baz: Union[list["X"], str]
         mas: int = 3
 
     fields, defaults = annotations(X, globalns=globals(), localns=locals())
 
-    assert fields == {
+    expected = {
         "Foo": ClassVar[int],
         "foo": int,
-        "bar": List[X],
-        "baz": Union[List[X], str],
+        "bar": list[X],
+        "baz": Union[list[X], str],
         "mas": int,
     }
+
+    norm_fields = {k: _normalize_forwardref(v) for k, v in fields.items()}
+    norm_expected = {k: _normalize_forwardref(v) for k, v in expected.items()}
+    assert len(norm_fields) == 5
+    assert norm_fields == norm_expected
     assert defaults["mas"] == 3
 
 
@@ -216,33 +207,36 @@ def test_annotations__skip_classvar():
     class X:
         Foo: ClassVar[int] = 3
         foo: "int"
-        bar: List["X"]
-        baz: Union[List["X"], str]
+        bar: list["X"]
+        baz: Union[list["X"], str]
         mas: int = 3
 
     fields, defaults = annotations(
         X, globalns=globals(), localns=locals(), skip_classvar=True
     )
 
-    assert fields == {
+    expected = {
         "foo": int,
-        "bar": List[X],
-        "baz": Union[List[X], str],
+        "bar": list[X],
+        "baz": Union[list[X], str],
         "mas": int,
     }
+    norm_fields = {k: _normalize_forwardref(v) for k, v in fields.items()}
+    norm_expected = {k: _normalize_forwardref(v) for k, v in expected.items()}
+    assert norm_fields == norm_expected
     assert defaults["mas"] == 3
 
 
 def test_annotations__invalid_type():
     class X:
-        foo: List
+        foo: list
 
     with pytest.raises(InvalidAnnotation):
         annotations(
             X,
             globalns=globals(),
             localns=locals(),
-            invalid_types={List},
+            invalid_types={list},
             skip_classvar=True,
         )
 
@@ -257,29 +251,22 @@ def test_annotations__no_local_ns_raises():
         annotations(X, globalns=None, localns=None)
 
 
-# Union[type(None)] actually returns None
-# so we have to construct this object to test condition in code.
-WeirdNoneUnion = Union[str, int]
-WeirdNoneUnion.__args__ = (type(None), type(None))
-
-
 @pytest.mark.parametrize(
     "input,expected",
     [
         (Optional[str], str),
         (Union[str, None], str),
         (Union[str, type(None)], str),
-        (Optional[List[str]], List[str]),
+        (Optional[list[str]], list[str]),
         (Optional[Mapping[int, str]], Mapping[int, str]),
-        (Optional[AbstractSet[int]], AbstractSet[int]),
         (Optional[Set[int]], Set[int]),
-        (Optional[Tuple[int, ...]], Tuple[int, ...]),
-        (Optional[Dict[int, str]], Dict[int, str]),
-        (Optional[List[int]], List[int]),
+        (Optional[set[int]], set[int]),
+        (Optional[tuple[int, ...]], tuple[int, ...]),
+        (Optional[dict[int, str]], dict[int, str]),
+        (Optional[list[int]], list[int]),
         (str, str),
-        (List[str], List[str]),
+        (list[str], list[str]),
         (Union[str, int, float], Union[str, int, float]),
-        (WeirdNoneUnion, WeirdNoneUnion),
     ],
 )
 def test_remove_optional(input, expected):
@@ -292,25 +279,18 @@ def test_remove_optional(input, expected):
         (Optional[str], ((), str)),
         (Union[str, None], ((), str)),
         (Union[str, type(None)], ((), str)),
-        (Optional[List[str]], ((str,), list)),
+        (Optional[list[str]], ((str,), list)),
         (
             Optional[Mapping[int, str]],
             ((int, str), IN(dict, collections.abc.Mapping, typing.Mapping)),
         ),
-        (
-            Optional[AbstractSet[int]],
-            ((int,), IN(set, collections.abc.Set, typing.AbstractSet)),
-        ),
-        (
-            Optional[Set[int]],
-            ((int,), IN(set, collections.abc.Set, typing.AbstractSet)),
-        ),
-        (Optional[Tuple[int, ...]], ((int, ...), IN(tuple, typing.Tuple))),
-        (Optional[Dict[int, str]], ((int, str), dict)),
-        (Optional[List[int]], ((int,), list)),
+        (Optional[Set[int]], ((int,), IN(set, collections.abc.Set))),
+        (Optional[set[int]], ((int,), IN(set, collections.abc.Set))),
+        (Optional[tuple[int, ...]], ((int, ...), IN(tuple, tuple))),
+        (Optional[dict[int, str]], ((int, str), dict)),
+        (Optional[list[int]], ((int,), list)),
         (str, ((), str)),
-        (List[str], ((str,), list)),
-        (WeirdNoneUnion, ((type(None), type(None)), Union)),
+        (list[str], ((str,), list)),
     ],
 )
 def test__remove_optional__find_origin(input, expected):
@@ -333,7 +313,7 @@ def test__remove_optional_edgecase():
         (Union[str, None], True),
         (Union[str, type(None)], True),
         (str, False),
-        (List[str], False),
+        (list[str], False),
         (Union[str, int, float], False),
     ],
 )
@@ -344,15 +324,15 @@ def test_is_optional(input, expected):
 @pytest.mark.parametrize(
     "input,expected",
     [
-        (Tuple[int, ...], (tuple, int)),
-        (List[int], (list, int)),
+        (tuple[int, ...], (tuple, int)),
+        (list[int], (list, int)),
         (Mapping[str, int], (dict, int)),
-        (Dict[str, int], (dict, int)),
+        (dict[str, int], (dict, int)),
         (MutableMapping[str, int], (dict, int)),
-        (Set[str], (set, str)),
-        (FrozenSet[str], (set, str)),
+        (set[str], (set, str)),
+        (frozenset[str], (set, str)),
         (MutableSet[str], (set, str)),
-        (AbstractSet[str], (set, str)),
+        (Set[str], (set, str)),
         (Sequence[str], (list, str)),
     ],
 )

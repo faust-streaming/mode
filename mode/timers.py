@@ -1,9 +1,10 @@
 """AsyncIO Timers."""
 
 import asyncio
+from collections.abc import AsyncIterator, Awaitable, Iterator
 from itertools import count
 from time import perf_counter
-from typing import AsyncIterator, Awaitable, Callable, Iterator
+from typing import Callable
 
 from .utils.logging import get_logger
 from .utils.times import Seconds, want_seconds

@@ -1,6 +1,7 @@
 import asyncio
+from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from functools import partial
-from typing import AsyncContextManager, ClassVar, ContextManager, Dict
+from typing import ClassVar
 from unittest.mock import ANY, AsyncMock, MagicMock, Mock, call, patch
 
 import pytest
@@ -110,7 +111,7 @@ def test_repr():
 @pytest.mark.asyncio
 async def test_subclass_can_override_Service_task():
     class ATaskService(Service):
-        values: ClassVar[Dict] = []
+        values: ClassVar[dict] = []
 
         def __post_init__(self):
             self.event = asyncio.Event()
@@ -334,11 +335,11 @@ class test_Service:
 
     @pytest.mark.asyncio
     async def test_add_async_context__non_async(self, *, service):
-        class Cx(ContextManager):
+        class Cx(AbstractContextManager):
             def __exit__(self, *args):
                 return None
 
-        assert isinstance(Cx(), ContextManager)
+        assert isinstance(Cx(), AbstractContextManager)
 
         with pytest.raises(TypeError):
             await service.add_async_context(Cx())
@@ -349,11 +350,11 @@ class test_Service:
             await service.add_async_context(object())
 
     def test_add_context__is_async(self, *, service):
-        class Cx(AsyncContextManager):
+        class Cx(AbstractAsyncContextManager):
             async def __aexit__(self, *args):
                 return None
 
-        assert isinstance(Cx(), AsyncContextManager)
+        assert isinstance(Cx(), AbstractAsyncContextManager)
 
         with pytest.raises(TypeError):
             service.add_context(Cx())
@@ -367,9 +368,10 @@ class test_Service:
         service._stopped = Mock()
         service._crashed = Mock()
 
-        with patch("asyncio.wait", AsyncMock()) as wait, patch(
-            "asyncio.ensure_future", Mock()
-        ) as ensure_future:
+        with (
+            patch("asyncio.wait", AsyncMock()) as wait,
+            patch("asyncio.ensure_future", Mock()) as ensure_future,
+        ):
             f1 = Mock()
             f2 = Mock()
             f3 = Mock()
@@ -585,9 +587,10 @@ class test_Service:
 
     @pytest.mark.asyncio
     async def test_wait_many(self, *, service):
-        with patch("asyncio.wait", AsyncMock()) as wait, patch(
-            "asyncio.ensure_future", Mock()
-        ) as ensure_future:
+        with (
+            patch("asyncio.wait", AsyncMock()) as wait,
+            patch("asyncio.ensure_future", Mock()) as ensure_future,
+        ):
             service._wait_one = AsyncMock()
             m1 = AsyncMock()
             m2 = AsyncMock()

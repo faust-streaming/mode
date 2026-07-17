@@ -3,33 +3,26 @@
 import asyncio
 import logging
 import sys
-from contextlib import AsyncExitStack, ExitStack
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Coroutine,
+    Iterable,
+    Mapping,
+    MutableSequence,
+    Sequence,
+)
+from contextlib import (
+    AbstractAsyncContextManager,
+    AbstractContextManager,
+    AsyncExitStack,
+    ExitStack,
+)
 from datetime import tzinfo
 from functools import wraps
 from time import monotonic, perf_counter
 from types import TracebackType
-from typing import (
-    Any,
-    AsyncContextManager,
-    AsyncIterator,
-    Awaitable,
-    Callable,
-    ClassVar,
-    ContextManager,
-    Coroutine,
-    Dict,
-    Iterable,
-    List,
-    Mapping,
-    MutableSequence,
-    NamedTuple,
-    Optional,
-    Sequence,
-    Set,
-    Type,
-    Union,
-    cast,
-)
+from typing import Any, Callable, ClassVar, NamedTuple, Optional, Union, cast
 
 from .timers import Timer
 from .types import DiagT, ServiceT
@@ -56,8 +49,8 @@ WaitArgT = Union[FutureT, Event]
 
 
 class WaitResults(NamedTuple):
-    done: List[WaitArgT]
-    results: List[Any]
+    done: list[WaitArgT]
+    results: list[Any]
     stopped: bool
 
 
@@ -119,7 +112,7 @@ class ServiceBase(ServiceT):
 
     async def __aexit__(
         self,
-        exc_type: Optional[Type[BaseException]] = None,
+        exc_type: Optional[type[BaseException]] = None,
         exc_val: Optional[BaseException] = None,
         exc_tb: Optional[TracebackType] = None,
     ) -> Optional[bool]:
@@ -357,7 +350,7 @@ class Service(ServiceBase, ServiceCallbacks):
     """
 
     abstract: ClassVar[bool] = True
-    Diag: Type[DiagT] = Diag
+    Diag: type[DiagT] = Diag
 
     #: Set to True if .stop must wait for the shutdown flag to be set.
     wait_for_shutdown = False
@@ -401,11 +394,11 @@ class Service(ServiceBase, ServiceCallbacks):
     #: Note: Unlike ``add_dependency`` these futures will not be
     # restarted with the service: if you want that to happen make sure
     # calling service.start() again will add the future again.
-    _futures: Set[asyncio.Future]
+    _futures: set[asyncio.Future]
 
     #: The ``@Service.task`` decorator adds names of attributes
     #: that are ServiceTasks to this list (which is a class variable).
-    _tasks: ClassVar[Optional[Dict[str, Set[str]]]] = None
+    _tasks: ClassVar[Optional[dict[str, set[str]]]] = None
 
     @classmethod
     def from_awaitable(
@@ -548,7 +541,7 @@ class Service(ServiceBase, ServiceCallbacks):
         clsid = cls._get_class_id()
         if cls._tasks is None:
             cls._tasks = {}
-        tasks: Set[str] = set()
+        tasks: set[str] = set()
         for base in iter_mro_reversed(cls, stop=Service):
             tasks |= {
                 attr_name
@@ -558,7 +551,7 @@ class Service(ServiceBase, ServiceCallbacks):
         cls._tasks[clsid] = tasks
 
     def _get_tasks(self) -> Iterable[ServiceTask]:
-        seen: Set[ServiceTask] = set()
+        seen: set[ServiceTask] = set()
         cls = type(self)
         if cls._tasks:
             for attr_name in cls._tasks[cls._get_class_id()]:
@@ -640,21 +633,23 @@ class Service(ServiceBase, ServiceCallbacks):
             service.beacon.detach(self.beacon)
         return service
 
-    async def add_async_context(self, context: AsyncContextManager) -> Any:
-        if isinstance(context, AsyncContextManager):
+    async def add_async_context(
+        self, context: AbstractAsyncContextManager
+    ) -> Any:
+        if isinstance(context, AbstractAsyncContextManager):
             return await self.async_exit_stack.enter_async_context(context)
-        elif isinstance(context, ContextManager):  # type: ignore
+        elif isinstance(context, AbstractContextManager):  # type: ignore
             raise TypeError(
                 "Use `self.add_context(ctx)` for non-async context"
             )
         raise TypeError(f"Not a context/async context: {type(context)!r}")
 
-    def add_context(self, context: ContextManager) -> Any:
-        if isinstance(context, AsyncContextManager):
+    def add_context(self, context: AbstractContextManager) -> Any:
+        if isinstance(context, AbstractAsyncContextManager):
             raise TypeError(
                 "Use `await self.add_async_context(ctx)` for async context"
             )
-        elif isinstance(context, ContextManager):
+        elif isinstance(context, AbstractContextManager):
             return self.exit_stack.enter_context(context)
         raise TypeError(f"Not a context/async context: {type(context)!r}")
 
@@ -774,10 +769,10 @@ class Service(ServiceBase, ServiceCallbacks):
         }
         futures[stopped] = asyncio.ensure_future(stopped.wait(), loop=loop)
         futures[crashed] = asyncio.ensure_future(crashed.wait(), loop=loop)
-        done: Set[asyncio.Future]
-        pending: Set[asyncio.Future]
+        done: set[asyncio.Future]
+        _pending: set[asyncio.Future]
         try:
-            done, pending = await asyncio.wait(
+            done, _pending = await asyncio.wait(
                 futures.values(),
                 return_when=asyncio.FIRST_COMPLETED,
                 timeout=timeout,
@@ -785,8 +780,8 @@ class Service(ServiceBase, ServiceCallbacks):
             for f in done:
                 if f.done() and f.exception() is not None:
                     f.result()  # propagate exceptions
-            winners: List[WaitArgT] = []
-            results: List[Any] = []
+            winners: list[WaitArgT] = []
+            results: list[Any] = []
             for coro, fut in futures.items():
                 if fut.done():
                     winners.append(coro)
@@ -905,7 +900,7 @@ class Service(ServiceBase, ServiceCallbacks):
                 # if the service has no supervisor we go ahead
                 # and mark parent nodes as crashed as well.
                 root = self.beacon.root
-                seen: Set[NodeT] = set()
+                seen: set[NodeT] = set()
                 for node in self.beacon.walk():
                     if node in seen:
                         self.log.warning(

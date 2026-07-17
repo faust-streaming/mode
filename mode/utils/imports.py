@@ -5,25 +5,31 @@ import os
 import sys
 import typing
 import warnings
+from collections.abc import (
+    Generator,
+    Iterable,
+    Iterator,
+    Mapping,
+    MutableMapping,
+)
 from contextlib import contextmanager, suppress
 from types import ModuleType
 from typing import (
     Any,
     Callable,
-    Generator,
     Generic,
-    Iterable,
-    Iterator,
-    Mapping,
-    MutableMapping,
     NamedTuple,
     Optional,
-    Set,
-    Type,
     TypeVar,
     Union,
     cast,
 )
+
+try:
+    from importlib.metadata import entry_points  # Python >= 3.10
+except ImportError:
+    from importlib_metadata import entry_points  # type: ignore # Python < 3.10
+
 
 from .collections import FastUserDict
 from .objects import cached_property
@@ -85,7 +91,7 @@ class FactoryMapping(FastUserDict, Generic[_T]):
     """
 
     aliases: MutableMapping[str, str]
-    namespaces: Set
+    namespaces: set
     _finalized: bool = False
 
     def __init__(self, *args: Mapping, **kwargs: str) -> None:
@@ -293,6 +299,7 @@ def symbol_by_name(
             raise ValueError(f"Cannot import {name!r}: {exc}").with_traceback(
                 sys.exc_info()[2]
             ) from exc
+
         if attribute_name:
             return cast(_T, getattr(module, attribute_name))
         else:
@@ -300,12 +307,12 @@ def symbol_by_name(
     except (ImportError, AttributeError):
         if default is None:
             raise
-    return default
+        return default
 
 
 class EntrypointExtension(NamedTuple):
     name: str
-    type: Type
+    type: type
 
 
 class RawEntrypointExtension(NamedTuple):
@@ -336,7 +343,7 @@ def load_extension_classes(namespace: str) -> Iterable[EntrypointExtension]:
     """
     for name, cls_name in load_extension_class_names(namespace):
         try:
-            cls: Type = symbol_by_name(cls_name)
+            cls: type = symbol_by_name(cls_name)
         except (ImportError, SyntaxError) as exc:
             warnings.warn(
                 f"Cannot load {namespace} extension {cls_name!r}: {exc!r}",
@@ -367,20 +374,19 @@ def load_extension_class_names(
     [('msgpack', 'faust_msgpack:msgpack')]
     ```
     """
-    try:
-        from importlib.metadata import entry_points
-    except ImportError:
-        return
-
     eps = entry_points()
-    # For Python 3.10+, entry_points() returns an object with .select()
+    # Python 3.10+
     if hasattr(eps, "select"):
         for ep in eps.select(group=namespace):
-            yield RawEntrypointExtension(ep.name, f"{ep.module}:{ep.attr}")
+            yield RawEntrypointExtension(
+                ep.name, ":".join([ep.module, ep.attr])
+            )
+    # Python <3.10
     else:
-        # For Python 3.8/3.9, entry_points is a dict
         for ep in eps.get(namespace, []):
-            yield RawEntrypointExtension(ep.name, f"{ep.module}:{ep.attr}")
+            yield RawEntrypointExtension(
+                ep.name, ":".join([ep.module, ep.attr])
+            )
 
 
 @contextmanager

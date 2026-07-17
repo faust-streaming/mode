@@ -59,7 +59,8 @@ mode.loop.use('uvloop')
 """
 
 import importlib
-from typing import Mapping, Optional
+from collections.abc import Mapping
+from typing import Optional
 
 __all__ = ["LOOPS", "use"]
 

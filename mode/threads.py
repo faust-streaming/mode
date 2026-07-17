@@ -12,18 +12,9 @@ import asyncio
 import sys
 import threading
 import traceback
+from collections.abc import Awaitable
 from time import monotonic
-from typing import (
-    Any,
-    Awaitable,
-    Callable,
-    Dict,
-    List,
-    NamedTuple,
-    Optional,
-    Tuple,
-    Type,
-)
+from typing import Any, Callable, NamedTuple, Optional
 
 from .services import Service
 from .utils.futures import (
@@ -47,8 +38,8 @@ class QueuedMethod(NamedTuple):
 
     promise: asyncio.Future
     method: Callable[..., Awaitable[Any]]
-    args: Tuple[Any, ...]
-    kwargs: Dict[str, Any]
+    args: tuple[Any, ...]
+    kwargs: dict[str, Any]
 
 
 class WorkerThread(threading.Thread):
@@ -86,7 +77,7 @@ class WorkerThread(threading.Thread):
 class ServiceThread(Service):
     """Service subclass running within a dedicated thread."""
 
-    Worker: Type[WorkerThread] = WorkerThread
+    Worker: type[WorkerThread] = WorkerThread
 
     abstract = True
     wait_for_shutdown = True
@@ -107,7 +98,7 @@ class ServiceThread(Service):
         executor: Any = None,
         loop: Optional[asyncio.AbstractEventLoop] = None,
         thread_loop: Optional[asyncio.AbstractEventLoop] = None,
-        Worker: Optional[Type[WorkerThread]] = None,
+        Worker: Optional[type[WorkerThread]] = None,
         **kwargs: Any,
     ) -> None:
         # cannot share loop between threads, so create a new one
@@ -325,11 +316,11 @@ class MethodQueueWorker(Service):
 
 
 class MethodQueue(Service):
-    Worker: Type[MethodQueueWorker] = MethodQueueWorker
+    Worker: type[MethodQueueWorker] = MethodQueueWorker
 
     _queue: asyncio.Queue
     _queue_ready: Event
-    _workers: List[MethodQueueWorker]
+    _workers: list[MethodQueueWorker]
 
     mundane_level = "debug"
 
