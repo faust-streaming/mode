@@ -33,6 +33,8 @@ from typing import (
 
 import colorlog
 
+from mode.utils.loops import get_event_loop
+
 from .futures import all_tasks, current_task
 from .locals import LocalStack
 from .text import title
@@ -556,7 +558,7 @@ def cry(
         thread = tmap.get(tid)
         if thread:
             if thread.ident == current_thread.ident:
-                loop = asyncio.get_event_loop_policy().get_event_loop()
+                loop = get_event_loop()
             else:
                 loop = getattr(thread, "loop", None)
             print(f"THREAD {thread.name}", file=file)
@@ -689,7 +691,7 @@ class flight_recorder(AbstractContextManager, LogSeverityMixin):
         self.id = next(self._id_source)
         self.logger = logger
         self.timeout = want_seconds(timeout)
-        self.loop = loop or asyncio.get_event_loop_policy().get_event_loop()
+        self.loop = loop or get_event_loop()
         self.started_at_date = None
         self.enabled_by = None
         self.exit_stack = ExitStack()

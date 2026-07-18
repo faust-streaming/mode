@@ -4,6 +4,8 @@ import asyncio
 from inspect import isawaitable
 from typing import Any, Callable, NoReturn, Optional, Union
 
+from mode.utils.loops import get_event_loop
+
 # These used to be here, now moved to .queues
 from .queues import FlowControlEvent, FlowControlQueue  # noqa: F401
 
@@ -122,9 +124,7 @@ def done_future(
     result: Any = None, *, loop: Optional[asyncio.AbstractEventLoop] = None
 ) -> asyncio.Future:
     """Return `asyncio.Future` that is already evaluated."""
-    f = (
-        loop or asyncio.get_event_loop_policy().get_event_loop()
-    ).create_future()
+    f = (loop or get_event_loop()).create_future()
     f.set_result(result)
     return f
 

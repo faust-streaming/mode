@@ -3,7 +3,34 @@
 import asyncio
 from typing import Any, Callable, Optional
 
-__all__ = ["call_asap", "clone_loop"]
+__all__ = ["call_asap", "clone_loop", "get_event_loop"]
+
+
+def get_event_loop() -> asyncio.AbstractEventLoop:
+    """Return the current event loop, creating one if necessary.
+
+    :func:`asyncio.get_event_loop` used to create and register an event loop
+    for the main thread when none was set.  That implicit behaviour was
+    deprecated in Python 3.10 and removed in Python 3.12/3.14, where both
+    :func:`asyncio.get_event_loop` and
+    ``asyncio.get_event_loop_policy().get_event_loop()`` raise
+    :exc:`RuntimeError` when there is no current event loop.
+
+    Mode accesses ``Service.loop`` (and other helpers) outside of a running
+    loop -- e.g. at import time, when agents/services are declared at module
+    level -- so it needs the historical "get or create" semantics.  This
+    restores them in a way that works across Python 3.9-3.14.
+    """
+    try:
+        return asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    try:
+        return asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        return loop
 
 
 def _is_unix_loop(loop: asyncio.AbstractEventLoop) -> bool:
