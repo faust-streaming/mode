@@ -5,6 +5,8 @@ import os
 import warnings
 from typing import Optional, cast
 
+from mode.utils.loops import get_event_loop
+
 os.environ["GEVENT_LOOP"] = "mode.loop._gevent_loop.Loop"
 try:
     import gevent
@@ -59,4 +61,4 @@ class Policy(asyncio_gevent.EventLoopPolicy):  # type: ignore
 
 policy = Policy()
 asyncio.set_event_loop_policy(policy)
-loop = asyncio.get_event_loop_policy().get_event_loop()
+loop = get_event_loop()

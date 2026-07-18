@@ -24,6 +24,8 @@ from time import monotonic, perf_counter
 from types import TracebackType
 from typing import Any, Callable, ClassVar, NamedTuple, Optional, Union, cast
 
+from mode.utils.loops import get_event_loop
+
 from .timers import Timer
 from .types import DiagT, ServiceT
 from .utils.cron import secs_for_next
@@ -136,7 +138,7 @@ class ServiceBase(ServiceT):
     @property
     def loop(self) -> asyncio.AbstractEventLoop:
         if self._loop is None:
-            self._loop = asyncio.get_event_loop_policy().get_event_loop()
+            self._loop = get_event_loop()
         return self._loop
 
     @loop.setter
