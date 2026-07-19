@@ -38,14 +38,6 @@ except ImportError:
         return t
 
 
-try:
-    from typing import _type_check  # type: ignore
-except ImportError:
-
-    def _type_check(arg, msg, is_argument=True, module=None):  # type: ignore
-        return arg
-
-
 def _is_class_var(typ):
     # Works for typing.ClassVar and types.GenericAlias (Python 3.9+)
     origin = getattr(typ, "__origin__", None)
@@ -463,35 +455,20 @@ def eval_type(
     alias_types = alias_types or {}
     if isinstance(typ, str):
         typ = ForwardRef(typ)
-    if isinstance(typ, ForwardRef):
-        typ = _ForwardRef_safe_eval(typ, globalns, localns)
+    # `typing._eval_type` (imported above as `_eval_type`) already resolves
+    # ForwardRef instances directly -- it is the same stdlib function
+    # `typing.get_type_hints()` itself relies on, so it always matches
+    # whatever internal ForwardRef implementation the running interpreter
+    # has (this previously went through a hand-rolled evaluator here that
+    # poked at ForwardRef's private __forward_evaluated__/__forward_code__/
+    # __forward_value__ attributes as a workaround for Python 3.6/3.7; those
+    # attributes are not part of any stable API and are no longer present at
+    # all on Python 3.14's ForwardRef, which raised AttributeError. mode's
+    # floor is Python 3.9, well past the versions that workaround targeted).
     typ = _eval_type(typ, globalns, localns)
     if typ in invalid_types:
         raise InvalidAnnotation(typ)
     return alias_types.get(typ, typ)
-
-
-def _ForwardRef_safe_eval(
-    ref: ForwardRef,
-    globalns: Optional[dict[str, Any]] = None,
-    localns: Optional[dict[str, Any]] = None,
-) -> type:
-    # On 3.6/3.7 ForwardRef._evaluate crashes if str references ClassVar
-    if not ref.__forward_evaluated__:
-        if globalns is None and localns is None:
-            globalns = localns = {}
-        elif globalns is None:
-            globalns = localns
-        elif localns is None:
-            localns = globalns
-        val = eval(ref.__forward_code__, globalns, localns)  # noqa: S307
-        if not _is_class_var(val):
-            val = _type_check(
-                val, "Forward references must evaluate to types."
-            )
-        ref.__forward_value__ = val
-        ref.__forward_evaluated__ = True
-    return ref.__forward_value__
 
 
 def iter_mro_reversed(cls: type, stop: type) -> Iterable[type]:

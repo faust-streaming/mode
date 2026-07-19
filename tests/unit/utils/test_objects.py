@@ -178,43 +178,6 @@ def test_eval_type():
     assert eval_type("typing.List") == list  # noqa: E721
 
 
-def test_annotations__TEMP_debug_314():
-    import inspect
-
-    from mode.utils.objects import local_annotations
-
-    class X:
-        Foo: ClassVar[int] = 3
-        foo: "int"
-        bar: list["X"]
-        baz: Union[list["X"], str]
-        mas: int = 3
-
-    print("=== TEMP DEBUG 314 START ===")
-    print(
-        "cls_dict_ann       =",
-        repr(X.__dict__.get("__annotations__", "<MISSING-KEY>")),
-    )
-    print("attr_ann           =", repr(X.__annotations__))
-    print("get_annotations()  =", repr(inspect.get_annotations(X)))
-    print(
-        "get_annotations(eval_str=True) =",
-        repr(
-            inspect.get_annotations(
-                X, eval_str=True, globals=globals(), locals=locals()
-            )
-        ),
-    )
-    print("has___annotate__   =", hasattr(X, "__annotate__"))
-    print("__annotate__       =", repr(getattr(X, "__annotate__", None)))
-    print(
-        "local_annotations()=",
-        list(local_annotations(X, globalns=globals(), localns=locals())),
-    )
-    print("=== TEMP DEBUG 314 END ===")
-    pytest.fail("see captured stdout above")
-
-
 def test_annotations():
     class X:
         Foo: ClassVar[int] = 3
