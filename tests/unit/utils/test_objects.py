@@ -275,6 +275,38 @@ def test_annotations__stop_excludes_base_above_stop():
     assert fields == {"foo": int}
 
 
+def test_annotations__preserves_function_local_class_identity():
+    # Regression test: a field annotated with a class defined inside a
+    # function (``__qualname__`` contains "<locals>") must be returned as the
+    # actual class object, not rewritten to its bare name string. Callers
+    # such as faust.Record match a field's resolved type by identity against
+    # a coercion mapping, which silently breaks if the type is replaced by a
+    # string.
+    class Local:
+        value: int
+
+    class Holder:
+        item: Local
+
+    fields, _ = annotations(Holder, globalns=globals(), localns=locals())
+
+    assert fields["item"] is Local
+    assert not isinstance(fields["item"], str)
+
+
+def test_eval_type__string_classvar_is_not_rejected():
+    # Regression test: a *string* ClassVar annotation (as produced by
+    # `from __future__ import annotations`) must not raise. Passing the
+    # forward ref straight to typing._eval_type runs typing._type_check,
+    # which rejects ClassVar[...] with "is not valid as type argument".
+    from typing import ClassVar as _ClassVar
+
+    result = eval_type(
+        "ClassVar[int]", globalns={"ClassVar": _ClassVar}, localns={}
+    )
+    assert result == _ClassVar[int]
+
+
 @pytest.mark.parametrize(
     "input,expected",
     [
