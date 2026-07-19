@@ -1,9 +1,18 @@
 """Event loop utilities."""
 
 import asyncio
+import threading
 from typing import Any, Callable, Optional
 
 __all__ = ["call_asap", "clone_loop", "get_event_loop"]
+
+#: Per-thread cache of the loop resolved by :func:`get_event_loop` for when
+#: there is no *running* loop.  ``threading.local`` gives every thread its
+#: own attribute storage for free (no cross-thread leakage, no explicit
+#: cleanup required when a thread exits) -- required for correctness, not
+#: just performance, since Mode creates and runs a dedicated event loop per
+#: :class:`~mode.threads.ServiceThread` worker thread.
+_current_loop = threading.local()
 
 
 def get_event_loop() -> asyncio.AbstractEventLoop:
@@ -20,17 +29,34 @@ def get_event_loop() -> asyncio.AbstractEventLoop:
     loop -- e.g. at import time, when agents/services are declared at module
     level -- so it needs the historical "get or create" semantics.  This
     restores them in a way that works across Python 3.9-3.14.
+
+    Whether a loop is currently *running* can change on every call (that's
+    the whole point of an event loop), so :func:`asyncio.get_running_loop`
+    must always be re-checked and can't be cached. When nothing is running,
+    though, the resolved loop is stable for the lifetime of the thread that
+    resolved it, so it's cached in thread-local storage: once a thread has
+    created (or found) its loop, later calls on that thread return the
+    cached reference directly instead of re-running the
+    ``asyncio.get_event_loop()``-raises-then-create dance every time.
     """
     try:
         return asyncio.get_running_loop()
     except RuntimeError:
         pass
+
+    loop: Optional[asyncio.AbstractEventLoop] = getattr(
+        _current_loop, "loop", None
+    )
+    if loop is not None and not loop.is_closed():
+        return loop
+
     try:
-        return asyncio.get_event_loop()
+        loop = asyncio.get_event_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        return loop
+    _current_loop.loop = loop
+    return loop
 
 
 def _is_unix_loop(loop: asyncio.AbstractEventLoop) -> bool:
