@@ -28,7 +28,6 @@ from typing import (
     cast,
     get_args,
     get_origin,
-    get_type_hints,
 )
 
 try:
@@ -364,9 +363,19 @@ def local_annotations(
     globalns: Optional[dict[str, Any]] = None,
     localns: Optional[dict[str, Any]] = None,
 ) -> Iterable[tuple[str, type]]:
-    d = get_type_hints(
-        cls, globalns if globalns is not None else _get_globalns(cls), localns
-    )
+    # NOTE: Must only consider annotations defined directly on `cls`, not
+    # inherited ones. `annotations()` (the caller) already walks the MRO
+    # itself via `iter_mro_reversed(cls, stop=stop)` and calls
+    # `local_annotations` once per class in that bounded range, so callers
+    # can exclude base classes at/above `stop` (e.g. faust.Record excludes
+    # its internal ModelT/Model bases this way). Using
+    # `typing.get_type_hints(cls, ...)` here defeats that: it always merges
+    # annotations from the *entire* real MRO regardless of `stop`, so a
+    # non-ClassVar annotation on an excluded base (e.g.
+    # `ModelT.__evaluated_fields__`) would leak back in as if it were a
+    # field of every subclass. String/ForwardRef annotations are still
+    # resolved below, per value, via `_resolve_refs`/`eval_type`.
+    d = cls.__annotations__
     return _resolve_refs(
         d,
         globalns if globalns is not None else _get_globalns(cls),
