@@ -366,11 +366,18 @@ def annotations(
                 )
             )
 
-    # Normalize all field types for forward refs
-    normalized_fields = {
-        k: _normalize_forwardref(v) for k, v in fields.items()
-    }
-    return normalized_fields, defaults
+    # NOTE: Return the resolved field types as-is. `_resolve_refs`/`eval_type`
+    # above already turned string/ForwardRef annotations into real types, so
+    # nothing further is needed here. Do NOT run `_normalize_forwardref` over
+    # the result: it rewrites any type whose ``__qualname__`` contains
+    # "<locals>" (i.e. every class defined inside a function) down to a bare
+    # ``__name__`` *string*, destroying the actual class object. Callers such
+    # as faust.Record rely on identity of the returned types (e.g. matching a
+    # field type against a custom coercion mapping), which silently breaks
+    # when the type is replaced by its name string. `_normalize_forwardref`
+    # remains available as a comparison helper for callers/tests that want a
+    # canonical, hashable-by-name form.
+    return fields, defaults
 
 
 def local_annotations(
@@ -453,6 +460,7 @@ def eval_type(
     """
     invalid_types = invalid_types or set()
     alias_types = alias_types or {}
+    original_str = typ if isinstance(typ, str) else None
     if isinstance(typ, str):
         typ = ForwardRef(typ)
     # `typing._eval_type` (imported above as `_eval_type`) already resolves
@@ -465,7 +473,30 @@ def eval_type(
     # attributes are not part of any stable API and are no longer present at
     # all on Python 3.14's ForwardRef, which raised AttributeError. mode's
     # floor is Python 3.9, well past the versions that workaround targeted).
-    typ = _eval_type(typ, globalns, localns)
+    if isinstance(typ, ForwardRef):
+        try:
+            typ = _eval_type(typ, globalns, localns)
+        except TypeError:
+            # `_eval_type` runs the forward ref through `typing._type_check`,
+            # which rejects `ClassVar[...]` with "is not valid as type
+            # argument". But a *string* ClassVar annotation is legitimate --
+            # `from __future__ import annotations` stringizes every
+            # annotation, ClassVars included -- and callers (see
+            # `_resolve_refs` + `skip_classvar`) still want to see it so they
+            # can drop it. Evaluate the forward arg directly and accept it
+            # when it is a ClassVar; otherwise re-raise the real error.
+            src = (
+                original_str
+                if original_str is not None
+                else typ.__forward_arg__
+            )
+            evaluated = eval(src, globalns, localns)  # noqa: S307
+            if _is_class_var(evaluated):
+                typ = evaluated
+            else:
+                raise
+    else:
+        typ = _eval_type(typ, globalns, localns)
     if typ in invalid_types:
         raise InvalidAnnotation(typ)
     return alias_types.get(typ, typ)
