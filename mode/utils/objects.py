@@ -52,6 +52,33 @@ def _is_class_var(typ):
     return origin is ClassVar
 
 
+if sys.version_info >= (3, 10):
+    from inspect import get_annotations as _own_annotations
+else:
+
+    def _own_annotations(
+        cls: type,
+        *,
+        globals: Optional[dict] = None,
+        locals: Optional[dict] = None,
+        eval_str: bool = False,
+    ) -> dict:
+        """Backport of :func:`inspect.get_annotations` for Python 3.9.
+
+        Returns only the annotations declared directly in ``cls.__dict__``,
+        never inherited ones -- matching the 3.10+ stdlib function this
+        shadows, which is what makes it safe to use per-class inside a
+        bounded MRO walk (see ``local_annotations`` below).
+        """
+        ann = cls.__dict__.get("__annotations__", {})
+        if eval_str:
+            ann = {
+                k: (eval(v, globals, locals) if isinstance(v, str) else v)  # noqa: S307
+                for k, v in ann.items()
+            }
+        return dict(ann)
+
+
 def _get_globalns(cls):
     # Get the global namespace for a class
     module = sys.modules.get(cls.__module__)
@@ -373,9 +400,21 @@ def local_annotations(
     # annotations from the *entire* real MRO regardless of `stop`, so a
     # non-ClassVar annotation on an excluded base (e.g.
     # `ModelT.__evaluated_fields__`) would leak back in as if it were a
-    # field of every subclass. String/ForwardRef annotations are still
-    # resolved below, per value, via `_resolve_refs`/`eval_type`.
-    d = cls.__annotations__
+    # field of every subclass.
+    #
+    # Plain `cls.__annotations__` attribute access is *not* safe for this
+    # either: on Python < 3.10 it falls back to an inherited base's
+    # `__annotations__` via normal MRO lookup when `cls` itself has none of
+    # its own (re-introducing the same kind of leak), and on Python 3.14+
+    # (PEP 649, deferred evaluation of annotations) direct `__annotations__`
+    # access on a class can behave unreliably -- the stdlib explicitly
+    # recommends `inspect.get_annotations()` instead, which reads only
+    # `cls.__dict__["__annotations__"]` (own annotations, no MRO fallback)
+    # and is written to handle PEP 649 correctly. `_own_annotations` here is
+    # that function, with a same-behavior backport for 3.9. String/ForwardRef
+    # annotations are still resolved below, per value, via
+    # `_resolve_refs`/`eval_type`.
+    d = _own_annotations(cls)
     return _resolve_refs(
         d,
         globalns if globalns is not None else _get_globalns(cls),
