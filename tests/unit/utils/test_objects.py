@@ -251,6 +251,30 @@ def test_annotations__no_local_ns_raises():
         annotations(X, globalns=None, localns=None)
 
 
+def test_annotations__stop_excludes_base_above_stop():
+    # Regression test: a non-ClassVar annotation on a base class *above*
+    # `stop` must not leak into the fields of a subclass, even though
+    # Python's typing.get_type_hints() (which local_annotations() must NOT
+    # use directly) would normally merge annotations across the whole real
+    # MRO regardless of any `stop` boundary.
+    class Base:
+        # Deliberately not ClassVar, mirroring faust ModelT.__evaluated_fields__.
+        internal: int = 0
+
+    class Middle(Base):
+        pass
+
+    class Leaf(Middle):
+        foo: int
+
+    fields, _ = annotations(
+        Leaf, stop=Middle, globalns=globals(), localns=locals()
+    )
+
+    assert "internal" not in fields
+    assert fields == {"foo": int}
+
+
 @pytest.mark.parametrize(
     "input,expected",
     [
