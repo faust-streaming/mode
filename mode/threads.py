@@ -20,6 +20,7 @@ from mode.utils.loops import get_event_loop
 
 from .services import Service
 from .utils.futures import (
+    all_tasks,
     maybe_async,
     maybe_set_exception,
     maybe_set_result,
@@ -109,6 +110,10 @@ class ServiceThread(Service):
             raise NotImplementedError("executor argument no longer supported")
         self.parent_loop = loop or get_event_loop()
         self.thread_loop = thread_loop or asyncio.new_event_loop()
+        # Only close the loop on shutdown if we created it ourselves --
+        # a caller who passed their own thread_loop= may expect to keep
+        # managing its lifecycle.
+        self._close_thread_loop_on_stop = thread_loop is None
         self._thread_started = Event(loop=self.parent_loop)
         if Worker is not None:
             self.Worker = Worker
@@ -209,6 +214,9 @@ class ServiceThread(Service):
             # shutdown here, since _shutdown_thread will not execute.
             self.set_shutdown()
             raise
+        finally:
+            if self._close_thread_loop_on_stop:
+                self.thread_loop.close()
 
     async def stop(self) -> None:
         if self._started.is_set():
@@ -241,6 +249,30 @@ class ServiceThread(Service):
         await self._default_stop_futures()
         await self._default_stop_exit_stacks()
 
+    async def _gather_remaining_tasks(self) -> None:
+        # _default_stop_futures() above only cancels/awaits futures that
+        # were registered with *this* Service via add_future()/@Service.task.
+        # A driver library running inside this thread (e.g. a Kafka client's
+        # internal consumer poll/heartbeat loop) may schedule tasks directly
+        # on thread_loop, bypassing that tracking entirely. Left unswept,
+        # those tasks are simply abandoned the moment this coroutine returns
+        # and thread_loop stops running -- producing "coroutine ... was
+        # never awaited" / "Task was destroyed but it is pending" warnings
+        # at some later, unpredictable point (e.g. interpreter shutdown).
+        # Mirrors Worker._gather_all(), which does the same sweep for the
+        # main loop.
+        current = asyncio.current_task()
+        tasks = {
+            task
+            for task in all_tasks(loop=self.thread_loop)
+            if task is not current and not task.done()
+        }
+        if not tasks:
+            return
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
     async def _serve(self) -> None:
         try:
             # start the service
@@ -260,6 +292,7 @@ class ServiceThread(Service):
             raise
         finally:
             await self._shutdown_thread()
+            await self._gather_remaining_tasks()
 
     @Service.task
     async def _thread_keepalive(self) -> None:
