@@ -191,7 +191,10 @@ def test_annotations__TEMP_debug_314():
         mas: int = 3
 
     print("=== TEMP DEBUG 314 START ===")
-    print("cls_dict_ann       =", repr(X.__dict__.get("__annotations__", "<MISSING-KEY>")))
+    print(
+        "cls_dict_ann       =",
+        repr(X.__dict__.get("__annotations__", "<MISSING-KEY>")),
+    )
     print("attr_ann           =", repr(X.__annotations__))
     print("get_annotations()  =", repr(inspect.get_annotations(X)))
     print(
@@ -204,7 +207,10 @@ def test_annotations__TEMP_debug_314():
     )
     print("has___annotate__   =", hasattr(X, "__annotate__"))
     print("__annotate__       =", repr(getattr(X, "__annotate__", None)))
-    print("local_annotations()=", list(local_annotations(X, globalns=globals(), localns=locals())))
+    print(
+        "local_annotations()=",
+        list(local_annotations(X, globalns=globals(), localns=locals())),
+    )
     print("=== TEMP DEBUG 314 END ===")
     pytest.fail("see captured stdout above")
 
