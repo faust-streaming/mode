@@ -206,7 +206,7 @@ def test_annotations__TEMP_debug_314():
     print("__annotate__       =", repr(getattr(X, "__annotate__", None)))
     print("local_annotations()=", list(local_annotations(X, globalns=globals(), localns=locals())))
     print("=== TEMP DEBUG 314 END ===")
-    assert False, "see captured stdout above"
+    pytest.fail("see captured stdout above")
 
 
 def test_annotations():
