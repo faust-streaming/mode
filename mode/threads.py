@@ -88,6 +88,14 @@ class ServiceThread(Service):
     #: underlying thread to be fully started.
     wait_for_thread: bool = True
 
+    #: Drift threshold (in seconds) for the internal keepalive timer's
+    #: "woke up too late/early" warning. ``None`` uses the same default
+    #: heuristic as any other `Service.itertimer`. The keepalive timer
+    #: runs every second purely to keep the thread's own event loop
+    #: scheduled, so overrides here only affect how noisy that specific
+    #: log is, not the thread's actual behavior.
+    keepalive_max_drift: Optional[float] = None
+
     _thread: Optional["WorkerThread"] = None
     _thread_started: Event
     _thread_running: Optional[asyncio.Future] = None
@@ -264,7 +272,9 @@ class ServiceThread(Service):
     @Service.task
     async def _thread_keepalive(self) -> None:
         async for _sleep_time in self.itertimer(
-            1.0, name=f"_thread_keepalive-{self.label}"
+            1.0,
+            max_drift=self.keepalive_max_drift,
+            name=f"_thread_keepalive-{self.label}",
         ):  # pragma: no cover
             # The consumer thread will have a separate event loop,
             # and so we use this trick to make sure our loop is

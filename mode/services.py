@@ -1053,6 +1053,7 @@ class Service(ServiceBase, ServiceCallbacks):
         interval: Seconds,
         *,
         max_drift_correction: float = 0.1,
+        max_drift: Optional[float] = None,
         sleep: Optional[Callable[..., Awaitable]] = None,
         clock: ClockArg = perf_counter,
         name: str = "",
@@ -1070,6 +1071,13 @@ class Service(ServiceBase, ServiceCallbacks):
             Will sleep the full `interval` seconds before returning
             from first iteration.
 
+        Arguments:
+            max_drift: Log a warning when the timer's wakeup drifts by more
+                than this many seconds. Defaults to `~mode.timers.Timer`'s
+                usual ``min(interval * 30%, 1.2s)`` heuristic; pass an
+                explicit value to raise (or lower) the threshold for timers
+                where the default is too sensitive.
+
         Examples:
 
         ```python
@@ -1086,6 +1094,7 @@ class Service(ServiceBase, ServiceCallbacks):
                 interval,
                 name=name,
                 max_drift_correction=max_drift_correction,
+                max_drift=max_drift,
                 clock=clock,
                 sleep=sleepfun,
             ):

@@ -21,6 +21,16 @@ async def test_Timer_real_run():
         i += 1
 
 
+def test_Timer_max_drift__defaults_to_heuristic_when_omitted():
+    timer = Timer(1.0, name="test")
+    assert timer.max_drift == pytest.approx(0.30)  # min(1.0 * 0.30, 1.2)
+
+
+def test_Timer_max_drift__uses_explicit_value_when_given():
+    timer = Timer(1.0, name="test", max_drift=5.0)
+    assert timer.max_drift == 5.0
+
+
 class Interval(NamedTuple):
     interval: float
     wakeup_time: float
@@ -227,6 +237,98 @@ class test_Timer_1s_half_second_skew(test_Timer):
 class test_Timer_30s_five_second_skew(test_Timer):
     interval = 30.0
     skew = 5.0
+
+
+class test_Timer_explicit_max_drift_suppresses_warning(test_Timer):
+    # Same 1s interval / 0.3s skew as the base class, which normally logs
+    # a warning (0.3s drift >= the default ~0.3 threshold for a 1s
+    # interval). An explicit `max_drift` higher than the induced drift
+    # must silence it.
+
+    @pytest.fixture
+    def timer(self, *, clock, sleep) -> Timer:
+        return Timer(
+            self.interval,
+            name="test",
+            clock=clock,
+            sleep=sleep,
+            max_drift=self.skew + 0.1,
+        )
+
+    @pytest.mark.asyncio
+    async def test_too_early(self, *, clock, timer, first_interval):
+        interval = self.interval
+        skew = self.skew
+        intervals = [
+            first_interval,
+            (None, None),
+            (None, None),
+            (interval - skew, None),
+            (None, interval + skew),
+            (None, None),
+        ]
+        async with self.assert_timer(timer, clock, intervals) as logger:
+            logger.info.assert_not_called()
+            assert not timer.drifting
+            assert not timer.drifting_early
+
+    @pytest.mark.asyncio
+    async def test_too_late(self, *, clock, timer, first_interval):
+        interval = self.interval
+        skew = self.skew
+        intervals = [
+            first_interval,
+            (None, None),
+            (None, None),
+            (interval + skew, None),
+            (None, interval + skew),
+            (None, None),
+        ]
+        async with self.assert_timer(timer, clock, intervals) as logger:
+            logger.info.assert_not_called()
+            assert not timer.drifting
+            assert not timer.drifting_late
+
+
+class test_Timer_explicit_max_drift_lowers_threshold(test_Timer):
+    # A small skew that would normally stay silent (well under the
+    # default ~0.3 threshold for a 1s interval) must warn once `max_drift`
+    # is explicitly set below it.
+    skew = 0.05
+
+    @pytest.fixture
+    def timer(self, *, clock, sleep) -> Timer:
+        return Timer(
+            self.interval,
+            name="test",
+            clock=clock,
+            sleep=sleep,
+            max_drift=0.01,
+        )
+
+    @pytest.mark.asyncio
+    async def test_too_late(self, *, clock, timer, first_interval):
+        interval = self.interval
+        skew = self.skew
+        intervals = [
+            first_interval,
+            (None, None),
+            (None, None),
+            (interval + skew, None),
+            (None, interval + skew),
+            (None, None),
+        ]
+        async with self.assert_timer(timer, clock, intervals) as logger:
+            logger.info.assert_called_once_with(
+                "Timer %s woke up too late, with a drift "
+                "of +%r runtime=%r sleeptime=%r",
+                "test",
+                ANY,
+                ANY,
+                ANY,
+            )
+            assert timer.drifting == 1
+            assert timer.drifting_late == 1
 
 
 class test_Timer_30s_five_second_skew_late_epoch(test_Timer):
