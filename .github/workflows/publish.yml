@@ -21,9 +21,15 @@ jobs:
             fetch-depth: 0
 
       - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
 
       - name: Install build dependencies
-        run: pip install build twine
+        # --upgrade packaging: the system interpreter satisfies twine's floor
+        # with packaging 24.0, which predates Metadata-Version 2.4 / PEP 639
+        # License-File support and fails `twine check` on wheels built by
+        # setuptools >= 77.
+        run: pip install --upgrade build twine packaging
 
       - name: 'Build package'
         run: scripts/build.sh
