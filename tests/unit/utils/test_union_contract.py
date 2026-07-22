@@ -30,17 +30,14 @@ def test_typing_union_is_recognized(annotation):
     sys.version_info < (3, 10),
     reason="PEP 604 requires Python 3.10",
 )
-@pytest.mark.parametrize(
-    "annotation",
-    [
-        str | int,
-        str | None,
-        str | list | dict | None,
-        list[str] | dict[str, object] | None,
-    ],
-)
-def test_pep604_union_is_recognized(annotation):
-    assert is_union(annotation)
+def test_pep604_union_is_recognized():
+    annotations = [
+        eval("str | int"),
+        eval("str | None"),
+        eval("str | list | dict | None"),
+        eval("list[str] | dict[str, object] | None"),
+    ]
+    assert all(is_union(annotation) for annotation in annotations)
 
 
 @pytest.mark.parametrize(
@@ -60,17 +57,15 @@ def test_typing_optional_detection(annotation, expected):
     sys.version_info < (3, 10),
     reason="PEP 604 requires Python 3.10",
 )
-@pytest.mark.parametrize(
-    "annotation,expected",
-    [
-        (str | None, True),
-        (str | int | None, True),
-        (str | int, False),
-        (list[str] | dict[str, object] | None, True),
-    ],
-)
-def test_pep604_optional_detection(annotation, expected):
-    assert is_optional(annotation) is expected
+def test_pep604_optional_detection():
+    cases = [
+        (eval("str | None"), True),
+        (eval("str | int | None"), True),
+        (eval("str | int"), False),
+        (eval("list[str] | dict[str, object] | None"), True),
+    ]
+    for annotation, expected in cases:
+        assert is_optional(annotation) is expected
 
 
 def test_remove_optional_preserves_multi_type_union():
@@ -84,7 +79,7 @@ def test_remove_optional_preserves_multi_type_union():
     reason="PEP 604 requires Python 3.10",
 )
 def test_remove_optional_normalizes_pep604_multi_type_union():
-    result = remove_optional(str | list | dict | None)
+    result = remove_optional(eval("str | list | dict | None"))
     assert get_origin(result) is typing.Union
     assert set(get_args(result)) == {str, list, dict}
 
@@ -95,7 +90,7 @@ def test_remove_optional_normalizes_pep604_multi_type_union():
 )
 def test_remove_optional_with_origin_retains_all_non_none_members():
     args, origin = _remove_optional(
-        str | list | dict | None,
+        eval("str | list | dict | None"),
         find_origin=True,
     )
     assert origin is typing.Union
