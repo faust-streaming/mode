@@ -8,7 +8,7 @@ receive.
 
 import sys
 import typing
-from typing import Optional, Union, get_args, get_origin
+from typing import Any, Optional, Union, get_args, get_origin
 
 import pytest
 
@@ -19,8 +19,8 @@ from mode.utils.objects import (
     remove_optional,
 )
 
-PEP604_UNION_CASES = []
-PEP604_OPTIONAL_CASES = []
+PEP604_UNION_CASES: list[Any] = []
+PEP604_OPTIONAL_CASES: list[tuple[Any, bool]] = []
 if sys.version_info >= (3, 10):
     PEP604_UNION_CASES = [
         str | int,
