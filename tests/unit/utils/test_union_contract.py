@@ -20,19 +20,14 @@ def _eval_pep604(expression: str) -> Any:
 
 @pytest.mark.parametrize(
     "annotation",
-    [
-        Union[str, int],
-        Optional[str],
-        Union[str, list, dict, None],
-    ],
+    [Union[str, int], Optional[str], Union[str, list, dict, None]],
 )
 def test_typing_union_is_recognized(annotation):
     assert is_union(annotation)
 
 
 @pytest.mark.skipif(
-    sys.version_info < (3, 10),
-    reason="PEP 604 requires Python 3.10",
+    sys.version_info < (3, 10), reason="PEP 604 requires Python 3.10"
 )
 def test_pep604_union_is_recognized():
     annotations = [
@@ -58,8 +53,7 @@ def test_typing_optional_detection(annotation, expected):
 
 
 @pytest.mark.skipif(
-    sys.version_info < (3, 10),
-    reason="PEP 604 requires Python 3.10",
+    sys.version_info < (3, 10), reason="PEP 604 requires Python 3.10"
 )
 def test_pep604_optional_detection():
     cases = [
@@ -79,8 +73,7 @@ def test_remove_optional_preserves_multi_type_union():
 
 
 @pytest.mark.skipif(
-    sys.version_info < (3, 10),
-    reason="PEP 604 requires Python 3.10",
+    sys.version_info < (3, 10), reason="PEP 604 requires Python 3.10"
 )
 def test_remove_optional_normalizes_pep604_multi_type_union():
     result = remove_optional(_eval_pep604("str | list | dict | None"))
@@ -89,13 +82,11 @@ def test_remove_optional_normalizes_pep604_multi_type_union():
 
 
 @pytest.mark.skipif(
-    sys.version_info < (3, 10),
-    reason="PEP 604 requires Python 3.10",
+    sys.version_info < (3, 10), reason="PEP 604 requires Python 3.10"
 )
 def test_remove_optional_with_origin_retains_all_non_none_members():
     args, origin = _remove_optional(
-        _eval_pep604("str | list | dict | None"),
-        find_origin=True,
+        _eval_pep604("str | list | dict | None"), find_origin=True
     )
     assert origin is typing.Union
     assert set(args) == {str, list, dict}
