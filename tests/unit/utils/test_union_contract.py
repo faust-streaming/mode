@@ -1,14 +1,8 @@
-"""Union-introspection compatibility contract.
-
-The helpers in :mod:`mode.utils.objects` are consumed by downstream projects
-such as Faust. These tests make changes in union recognition explicit so a
-Mode upgrade cannot silently change which annotations downstream compilers
-receive.
-"""
+"""Union-introspection compatibility contract."""
 
 import sys
 import typing
-from typing import Any, Optional, Union, get_args, get_origin
+from typing import Optional, Union, get_args, get_origin
 
 import pytest
 
@@ -18,22 +12,6 @@ from mode.utils.objects import (
     is_union,
     remove_optional,
 )
-
-PEP604_UNION_CASES: list[Any] = []
-PEP604_OPTIONAL_CASES: list[tuple[Any, bool]] = []
-if sys.version_info >= (3, 10):
-    PEP604_UNION_CASES = [
-        str | int,
-        str | None,
-        str | list | dict | None,
-        list[str] | dict[str, object] | None,
-    ]
-    PEP604_OPTIONAL_CASES = [
-        (str | None, True),
-        (str | int | None, True),
-        (str | int, False),
-        (list[str] | dict[str, object] | None, True),
-    ]
 
 
 @pytest.mark.parametrize(
@@ -48,7 +26,19 @@ def test_typing_union_is_recognized(annotation):
     assert is_union(annotation)
 
 
-@pytest.mark.parametrize("annotation", PEP604_UNION_CASES)
+@pytest.mark.skipif(
+    sys.version_info < (3, 10),
+    reason="PEP 604 requires Python 3.10",
+)
+@pytest.mark.parametrize(
+    "annotation",
+    [
+        str | int,
+        str | None,
+        str | list | dict | None,
+        list[str] | dict[str, object] | None,
+    ],
+)
 def test_pep604_union_is_recognized(annotation):
     assert is_union(annotation)
 
@@ -66,7 +56,19 @@ def test_typing_optional_detection(annotation, expected):
     assert is_optional(annotation) is expected
 
 
-@pytest.mark.parametrize("annotation,expected", PEP604_OPTIONAL_CASES)
+@pytest.mark.skipif(
+    sys.version_info < (3, 10),
+    reason="PEP 604 requires Python 3.10",
+)
+@pytest.mark.parametrize(
+    "annotation,expected",
+    [
+        (str | None, True),
+        (str | int | None, True),
+        (str | int, False),
+        (list[str] | dict[str, object] | None, True),
+    ],
+)
 def test_pep604_optional_detection(annotation, expected):
     assert is_optional(annotation) is expected
 
@@ -78,7 +80,8 @@ def test_remove_optional_preserves_multi_type_union():
 
 
 @pytest.mark.skipif(
-    sys.version_info < (3, 10), reason="PEP 604 requires Python 3.10"
+    sys.version_info < (3, 10),
+    reason="PEP 604 requires Python 3.10",
 )
 def test_remove_optional_normalizes_pep604_multi_type_union():
     result = remove_optional(str | list | dict | None)
@@ -87,7 +90,8 @@ def test_remove_optional_normalizes_pep604_multi_type_union():
 
 
 @pytest.mark.skipif(
-    sys.version_info < (3, 10), reason="PEP 604 requires Python 3.10"
+    sys.version_info < (3, 10),
+    reason="PEP 604 requires Python 3.10",
 )
 def test_remove_optional_with_origin_retains_all_non_none_members():
     args, origin = _remove_optional(
