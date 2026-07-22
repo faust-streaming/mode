@@ -1,7 +1,7 @@
 """Union-introspection compatibility contract.
 
 The helpers in :mod:`mode.utils.objects` are consumed by downstream projects
-such as Faust.  These tests make changes in union recognition explicit so a
+such as Faust. These tests make changes in union recognition explicit so a
 Mode upgrade cannot silently change which annotations downstream compilers
 receive.
 """
@@ -13,6 +13,23 @@ from typing import Optional, Union, get_args, get_origin
 import pytest
 
 from mode.utils.objects import _remove_optional, is_optional, is_union, remove_optional
+
+
+PEP604_UNION_CASES = []
+PEP604_OPTIONAL_CASES = []
+if sys.version_info >= (3, 10):
+    PEP604_UNION_CASES = [
+        str | int,
+        str | None,
+        str | list | dict | None,
+        list[str] | dict[str, object] | None,
+    ]
+    PEP604_OPTIONAL_CASES = [
+        (str | None, True),
+        (str | int | None, True),
+        (str | int, False),
+        (list[str] | dict[str, object] | None, True),
+    ]
 
 
 @pytest.mark.parametrize(
@@ -27,16 +44,7 @@ def test_typing_union_is_recognized(annotation):
     assert is_union(annotation)
 
 
-@pytest.mark.skipif(sys.version_info < (3, 10), reason="PEP 604 requires Python 3.10")
-@pytest.mark.parametrize(
-    "annotation",
-    [
-        str | int,
-        str | None,
-        str | list | dict | None,
-        list[str] | dict[str, object] | None,
-    ],
-)
+@pytest.mark.parametrize("annotation", PEP604_UNION_CASES)
 def test_pep604_union_is_recognized(annotation):
     assert is_union(annotation)
 
@@ -54,16 +62,7 @@ def test_typing_optional_detection(annotation, expected):
     assert is_optional(annotation) is expected
 
 
-@pytest.mark.skipif(sys.version_info < (3, 10), reason="PEP 604 requires Python 3.10")
-@pytest.mark.parametrize(
-    "annotation,expected",
-    [
-        (str | None, True),
-        (str | int | None, True),
-        (str | int, False),
-        (list[str] | dict[str, object] | None, True),
-    ],
-)
+@pytest.mark.parametrize("annotation,expected", PEP604_OPTIONAL_CASES)
 def test_pep604_optional_detection(annotation, expected):
     assert is_optional(annotation) is expected
 
