@@ -15,7 +15,7 @@ from mode.utils.objects import (
 
 
 def _eval_pep604(expression: str) -> Any:
-    return eval(expression)  # noqa: S307
+    return eval(expression)
 
 
 @pytest.mark.parametrize(
