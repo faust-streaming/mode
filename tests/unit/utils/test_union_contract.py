@@ -78,8 +78,7 @@ def test_remove_optional_preserves_multi_type_union():
 
 
 @pytest.mark.skipif(
-    sys.version_info < (3, 10),
-    reason="PEP 604 requires Python 3.10",
+    sys.version_info < (3, 10), reason="PEP 604 requires Python 3.10"
 )
 def test_remove_optional_normalizes_pep604_multi_type_union():
     result = remove_optional(str | list | dict | None)
@@ -88,8 +87,7 @@ def test_remove_optional_normalizes_pep604_multi_type_union():
 
 
 @pytest.mark.skipif(
-    sys.version_info < (3, 10),
-    reason="PEP 604 requires Python 3.10",
+    sys.version_info < (3, 10), reason="PEP 604 requires Python 3.10"
 )
 def test_remove_optional_with_origin_retains_all_non_none_members():
     args, origin = _remove_optional(
