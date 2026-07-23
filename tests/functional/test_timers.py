@@ -31,6 +31,60 @@ def test_Timer_max_drift__uses_explicit_value_when_given():
     assert timer.max_drift == 5.0
 
 
+@pytest.mark.asyncio
+async def test_Timer_max_drift__can_be_changed_at_runtime():
+    # `max_drift` is read fresh from the instance on every `tick()`, so it
+    # can be retuned live -- after the timer has already started iterating,
+    # not only at construction. This drives the same physical ~0.5s drift on
+    # three consecutive iterations and changes *only* `timer.max_drift`
+    # between them: the identical drift is silent, then warns, then is
+    # silent again, proving the new threshold takes effect immediately.
+    clock = Mock()
+    clock.side_effect = [
+        9.0,  # __init__ epoch
+        10.0,
+        11.5,  # iter 1 (first tick, no drift check): slept 1.5s
+        12.0,
+        13.5,  # iter 2: drift -0.5s
+        14.0,
+        15.5,  # iter 3: drift -0.5s
+        16.0,
+        17.5,  # iter 4: drift -0.5s
+    ]
+    sleep = AsyncMock()
+    timer = Timer(1.0, name="test", clock=clock, sleep=sleep, max_drift=1.0)
+    it = timer.__aiter__()
+
+    with patch("mode.timers.logger") as logger:
+        await it.__anext__()  # iter 1: first tick, establishes timing
+        await it.__anext__()  # iter 2: 0.5s drift < 1.0 threshold -> silent
+        logger.info.assert_not_called()
+        assert timer.drifting == 0
+
+        # Lower the threshold live; the next identical drift must now warn.
+        timer.max_drift = 0.1
+        await it.__anext__()  # iter 3: 0.5s drift >= 0.1 threshold -> warns
+        logger.info.assert_called_once_with(
+            "Timer %s woke up too late, with a drift of +%r "
+            "runtime=%r sleeptime=%r",
+            "test",
+            ANY,
+            ANY,
+            ANY,
+        )
+        assert timer.drifting == 1
+        assert timer.drifting_late == 1
+
+        # Raise it back live; the same drift falls silent again.
+        timer.max_drift = 1.0
+        await it.__anext__()  # iter 4: 0.5s drift < 1.0 threshold -> silent
+        logger.info.assert_called_once()  # still just the one warning
+        assert timer.drifting == 1
+        assert timer.drifting_late == 1
+
+    await it.aclose()
+
+
 class Interval(NamedTuple):
     interval: float
     wakeup_time: float
