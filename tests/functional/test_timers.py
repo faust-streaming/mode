@@ -21,6 +21,69 @@ async def test_Timer_real_run():
         i += 1
 
 
+def test_Timer_interval__setter_recomputes_derived_values():
+    timer = Timer(1.0, name="test")
+    assert timer.interval == 1.0
+    assert timer.interval_s == pytest.approx(1.0)
+    assert timer.max_drift == pytest.approx(0.30)  # min(1.0 * 0.30, 1.2)
+    assert timer.min_interval_s == pytest.approx(0.9)  # 1.0 - 0.1
+    assert timer.max_interval_s == pytest.approx(1.1)  # 1.0 + 0.1
+
+    # Reassigning the interval refreshes every interval-derived value so
+    # the timer is fully retuned, not just its nominal interval.
+    timer.interval = 10.0
+    assert timer.interval == 10.0
+    assert timer.interval_s == pytest.approx(10.0)
+    assert timer.max_drift == pytest.approx(1.2)  # min(10.0 * 0.30, 1.2)
+    assert timer.min_interval_s == pytest.approx(9.9)  # 10.0 - 0.1
+    assert timer.max_interval_s == pytest.approx(10.1)  # 10.0 + 0.1
+
+
+def test_Timer_interval__small_interval_collapses_bounds():
+    # An interval at or under the drift-correction window cannot be
+    # corrected, so the bounds collapse onto the interval itself -- this
+    # must still hold when the interval is set at runtime.
+    timer = Timer(1.0, name="test")
+    timer.interval = 0.05
+    assert timer.interval_s == pytest.approx(0.05)
+    assert timer.min_interval_s == pytest.approx(0.05)
+    assert timer.max_interval_s == pytest.approx(0.05)
+    assert timer.max_drift == pytest.approx(0.015)  # min(0.05 * 0.30, 1.2)
+
+
+@pytest.mark.asyncio
+async def test_Timer_interval__can_be_changed_at_runtime():
+    # After the interval is changed live, tick()/adjust_interval() must use
+    # the NEW interval and its recomputed bounds. The induced drift is
+    # large, so the next sleep is clamped up to the new max_interval_s
+    # (10.1); with the original 1s interval it would clamp to 1.1 instead,
+    # so the asserted value only holds if the change took effect.
+    clock = Mock()
+    clock.side_effect = [
+        9.0,  # __init__ epoch
+        10.0,
+        10.5,  # iter 1 (first tick): returns interval_s, slept 0.5s
+        11.0,
+        12.0,  # iter 2: drift computed against the new interval
+    ]
+    sleep = AsyncMock()
+    timer = Timer(1.0, name="test", clock=clock, sleep=sleep)
+    it = timer.__aiter__()
+
+    with patch("mode.timers.logger"):
+        first = await it.__anext__()
+        assert first == pytest.approx(1.0)  # still the original cadence
+
+        timer.interval = 10.0  # retune live, mid-iteration
+
+        second = await it.__anext__()
+        # 0.5s slept vs the new 10.0s interval is a big positive drift, so
+        # adjust_interval clamps up to the NEW max_interval_s (10.1).
+        assert second == pytest.approx(10.1)
+
+    await it.aclose()
+
+
 class Interval(NamedTuple):
     interval: float
     wakeup_time: float

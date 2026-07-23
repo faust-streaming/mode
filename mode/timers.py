@@ -23,7 +23,6 @@ logger = get_logger(__name__)
 class Timer:
     """Timer state."""
 
-    interval: Seconds
     interval_s: float
 
     max_drift: float
@@ -43,21 +42,17 @@ class Timer:
         clock: ClockArg = perf_counter,
         sleep: SleepArg = asyncio.sleep,
     ) -> None:
-        self.interval = interval
         self.max_drift_correction = max_drift_correction
         self.name = name
         self.clock: ClockArg = clock
         self.sleep: SleepArg = sleep
-        interval_s = self.interval_s = want_seconds(interval)
 
-        # Log when drift exceeds this number
-        self.max_drift = min(interval_s * MAX_DRIFT_PERCENT, MAX_DRIFT_CEILING)
-
-        if interval_s > self.max_drift_correction:
-            self.min_interval_s = interval_s - self.max_drift_correction
-            self.max_interval_s = interval_s + self.max_drift_correction
-        else:
-            self.min_interval_s = self.max_interval_s = interval_s
+        # Assigning ``interval`` computes ``interval_s``, the default
+        # ``max_drift`` threshold, and the drift-correction bounds (see the
+        # property setter below).  Going through the property means all of
+        # those derived values are recomputed if ``interval`` is reassigned
+        # while the timer is running.
+        self.interval = interval
 
         # If the loop calls asyncio.sleep(interval)
         # it will always wake up a little bit late, and can eventually
@@ -81,6 +76,39 @@ class Timer:
         self.drifting_early = 0
         self.drifting_late = 0
         self.overlaps = 0
+
+    @property
+    def interval(self) -> Seconds:
+        """Interval to sleep between each iteration.
+
+        Reassigning this while the timer is running retunes it live: the
+        assignment recomputes ``interval_s``, the default ``max_drift``
+        threshold, and the drift-correction bounds
+        (``min_interval_s``/``max_interval_s``), so the next ``tick`` uses
+        the new cadence.
+        """
+        return self._interval
+
+    @interval.setter
+    def interval(self, interval: Seconds) -> None:
+        self._interval = interval
+        self._configure_interval(want_seconds(interval))
+
+    def _configure_interval(self, interval_s: float) -> None:
+        # Derive everything that depends on the interval.  Called from the
+        # ``interval`` setter so a runtime interval change keeps these in
+        # sync (a stale ``max_interval_s`` would otherwise clamp
+        # ``adjust_interval`` to the old cadence).
+        self.interval_s = interval_s
+
+        # Log when drift exceeds this number.
+        self.max_drift = min(interval_s * MAX_DRIFT_PERCENT, MAX_DRIFT_CEILING)
+
+        if interval_s > self.max_drift_correction:
+            self.min_interval_s = interval_s - self.max_drift_correction
+            self.max_interval_s = interval_s + self.max_drift_correction
+        else:
+            self.min_interval_s = self.max_interval_s = interval_s
 
     async def __aiter__(self) -> AsyncIterator[float]:
         for _ in count():
