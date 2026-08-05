@@ -97,6 +97,7 @@ from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from functools import wraps
 from types import GetSetDescriptorType, TracebackType
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     ClassVar,
@@ -110,6 +111,9 @@ from typing import (
 )
 
 from .utils.locals import LocalStack  # XXX compat
+
+if TYPE_CHECKING:
+    from _typeshed import SupportsKeysAndGetItem
 
 __all__ = [
     "AsyncContextManagerProxy",
@@ -815,6 +819,18 @@ class MutableMappingRole(MappingRole[KT, VT], MutableMapping[KT, VT]):
 
     def setdefault(self, k: KT, *args: Any) -> VT:
         return self._get_mapping().setdefault(k, *args)
+
+    # Mirrors `MutableMapping.update` in typeshed, minus the overloads
+    # whose `self:` annotation restricts `**kwargs` to str-keyed mappings
+    # -- an overload implementation cannot satisfy those.
+    @overload
+    def update(self, m: "SupportsKeysAndGetItem[KT, VT]", /) -> None: ...
+
+    @overload
+    def update(self, m: Iterable[tuple[KT, VT]], /) -> None: ...
+
+    @overload
+    def update(self, **kwargs: VT) -> None: ...
 
     def update(self, *args: Any, **kwargs: Any) -> None:
         self._get_mapping().update(*args, **kwargs)
