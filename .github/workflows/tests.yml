@@ -38,10 +38,19 @@ jobs:
           cache-dependency-path: |
             requirements-docs.txt
             requirements-tests.txt
+            requirements-typecheck.txt
             pyproject.toml
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      # mypy is optional and refuses to run on PyPy.  Installing it here
+      # is what makes tests/functional/test_typecheck.py run instead of
+      # skip, so the type checks are exercised once per CPython version
+      # rather than against a single interpreter.
+      - name: Install type checker
+        if: "!startsWith(matrix.python-version, 'pypy')"
+        run: pip install -r requirements-typecheck.txt
 
       - name: Run linting checks
         run: scripts/lint.sh
@@ -54,39 +63,11 @@ jobs:
         with:
             token: ${{ secrets.CODECOV_TOKEN }}
 
-  typecheck:
-    name: "Type check with mypy"
-    runs-on: "ubuntu-latest"
-
-    steps:
-      - uses: actions/checkout@v3
-        with:
-            fetch-depth: 0
-      # mypy refuses to run on PyPy, so type checks run once here instead
-      # of on every leg of the test matrix, and mypy stays an optional
-      # dependency the other legs never install.
-      - uses: "actions/setup-python@v4"
-        with:
-          python-version: "3.13"
-          cache: "pip"
-          cache-dependency-path: |
-            requirements-docs.txt
-            requirements-tests.txt
-            requirements-typecheck.txt
-            pyproject.toml
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt -r requirements-typecheck.txt
-
-      - name: Run type checks
-        run: scripts/typecheck.sh
-
   check:  # This job does nothing and is only used for the branch protection
     name: ✅ Ensure the required checks passing
     if: always()
     needs:
       - tests
-      - typecheck
     runs-on: ubuntu-latest
     steps:
     - name: Decide whether the needed jobs succeeded or failed

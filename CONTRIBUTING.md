@@ -66,8 +66,11 @@ installed by `requirements.txt`:
 Success: no issues found in 45 source files
 ```
 
-It has to be run on CPython -- mypy exits with an error under PyPy -- which
-is why it is a separate CI job rather than part of `./scripts/lint.sh`.
+The suite also runs it, as `tests/functional/test_typecheck.py`. That test
+skips when mypy is not installed, so you only need it if you want the type
+checks locally -- CI installs it on the CPython legs of the matrix, and the
+check runs there once per Python version. It has to be CPython: mypy exits
+with an error under PyPy.
 
 ### Run tests
 
