@@ -3,6 +3,7 @@
 import abc
 import collections.abc
 import sys
+import types
 import typing
 from collections.abc import (
     Iterable,
@@ -16,6 +17,7 @@ from collections.abc import (
 from contextlib import suppress
 from decimal import Decimal
 from functools import total_ordering
+from inspect import get_annotations
 from pathlib import Path
 from typing import (
     Any,
@@ -38,40 +40,13 @@ except ImportError:
         return t
 
 
-def _is_class_var(typ):
-    # Works for typing.ClassVar and types.GenericAlias (Python 3.9+)
+def _is_class_var(typ: Any) -> bool:
+    # Works for typing.ClassVar and types.GenericAlias
     origin = getattr(typ, "__origin__", None)
     return origin is ClassVar
 
 
-if sys.version_info >= (3, 10):
-    from inspect import get_annotations as _own_annotations
-else:
-
-    def _own_annotations(
-        cls: type,
-        *,
-        globals: Optional[dict] = None,
-        locals: Optional[dict] = None,
-        eval_str: bool = False,
-    ) -> dict:
-        """Backport of :func:`inspect.get_annotations` for Python 3.9.
-
-        Returns only the annotations declared directly in ``cls.__dict__``,
-        never inherited ones -- matching the 3.10+ stdlib function this
-        shadows, which is what makes it safe to use per-class inside a
-        bounded MRO walk (see ``local_annotations`` below).
-        """
-        ann = cls.__dict__.get("__annotations__", {})
-        if eval_str:
-            ann = {
-                k: (eval(v, globals, locals) if isinstance(v, str) else v)  # noqa: S307
-                for k, v in ann.items()
-            }
-        return dict(ann)
-
-
-def _get_globalns(cls):
+def _get_globalns(cls: type) -> dict[str, Any]:
     # Get the global namespace for a class
     module = sys.modules.get(cls.__module__)
     return module.__dict__ if module else {}
@@ -100,7 +75,7 @@ __all__ = [
 # Workaround for https://bugs.python.org/issue29581
 try:
 
-    @typing.no_type_check  # type: ignore
+    @typing.no_type_check
     class _InitSubclassCheck(metaclass=abc.ABCMeta):
         ident: int
 
@@ -110,7 +85,7 @@ try:
             self.ident = ident
             super().__init__(*args, **kwargs)
 
-    @typing.no_type_check  # type: ignore
+    @typing.no_type_check
     class _UsingKwargsInNew(_InitSubclassCheck, ident=909): ...
 
 except TypeError:
@@ -151,12 +126,7 @@ DICT_TYPES: tuple[type, ...] = (
 TUPLE_TYPES: tuple[type, ...] = cast(tuple[type, ...], (tuple,))
 
 
-if sys.version_info >= (3, 10):
-    import types
-
-    UNION_TYPES = (typing.Union, types.UnionType)
-else:
-    UNION_TYPES = (typing.Union,)
+UNION_TYPES = (typing.Union, types.UnionType)
 
 
 class InvalidAnnotation(Exception):
@@ -271,6 +241,8 @@ def _detect_main_name() -> str:  # pragma: no cover
     except (AttributeError, KeyError):  # ipython/REPL
         return "__main__"
     else:
+        if filename is None:
+            return "__main__"
         path = Path(filename).absolute()
         node = path.parent
         seen = []
@@ -283,7 +255,7 @@ def _detect_main_name() -> str:  # pragma: no cover
         return ".".join([*seen, path.stem])
 
 
-def _normalize_forwardref(t):
+def _normalize_forwardref(t: Any) -> Any:
     if isinstance(t, str):
         return t
     origin = getattr(t, "__origin__", None)
@@ -402,18 +374,14 @@ def local_annotations(
     # field of every subclass.
     #
     # Plain `cls.__annotations__` attribute access is *not* safe for this
-    # either: on Python < 3.10 it falls back to an inherited base's
-    # `__annotations__` via normal MRO lookup when `cls` itself has none of
-    # its own (re-introducing the same kind of leak), and on Python 3.14+
-    # (PEP 649, deferred evaluation of annotations) direct `__annotations__`
-    # access on a class can behave unreliably -- the stdlib explicitly
-    # recommends `inspect.get_annotations()` instead, which reads only
-    # `cls.__dict__["__annotations__"]` (own annotations, no MRO fallback)
-    # and is written to handle PEP 649 correctly. `_own_annotations` here is
-    # that function, with a same-behavior backport for 3.9. String/ForwardRef
-    # annotations are still resolved below, per value, via
-    # `_resolve_refs`/`eval_type`.
-    d = _own_annotations(cls)
+    # either: on Python 3.14+ (PEP 649, deferred evaluation of annotations)
+    # direct `__annotations__` access on a class can behave unreliably --
+    # the stdlib explicitly recommends `inspect.get_annotations()` instead,
+    # which reads only `cls.__dict__["__annotations__"]` (own annotations,
+    # no MRO fallback) and is written to handle PEP 649 correctly.
+    # String/ForwardRef annotations are still resolved below, per value,
+    # via `_resolve_refs`/`eval_type`.
+    d = get_annotations(cls)
     return _resolve_refs(
         d,
         globalns if globalns is not None else _get_globalns(cls),
@@ -472,7 +440,8 @@ def eval_type(
     # __forward_value__ attributes as a workaround for Python 3.6/3.7; those
     # attributes are not part of any stable API and are no longer present at
     # all on Python 3.14's ForwardRef, which raised AttributeError. mode's
-    # floor is Python 3.9, well past the versions that workaround targeted).
+    # floor is Python 3.10, well past the versions that workaround
+    # targeted).
     if isinstance(typ, ForwardRef):
         try:
             typ = _eval_type(typ, globalns, localns)
@@ -499,7 +468,7 @@ def eval_type(
         typ = _eval_type(typ, globalns, localns)
     if typ in invalid_types:
         raise InvalidAnnotation(typ)
-    return alias_types.get(typ, typ)
+    return cast(type, alias_types.get(typ, typ))
 
 
 def iter_mro_reversed(cls: type, stop: type) -> Iterable[type]:
@@ -536,7 +505,7 @@ def iter_mro_reversed(cls: type, stop: type) -> Iterable[type]:
     wanted = False
     for subcls in reversed(cls.__mro__):
         if wanted:
-            yield cast(type, subcls)
+            yield subcls
         else:
             wanted = subcls == stop
 
@@ -558,7 +527,7 @@ def is_optional(typ: type) -> bool:
     return False
 
 
-def _remove_optional(typ: type, *, find_origin: bool = False) -> Any:
+def _remove_optional(typ: Any, *, find_origin: bool = False) -> Any:
     origin = get_origin(typ)
     args = get_args(typ)
     if origin in UNION_TYPES:
@@ -582,7 +551,7 @@ def _remove_optional(typ: type, *, find_origin: bool = False) -> Any:
 
 def _py36_maybe_unwrap_GenericMeta(typ: type) -> type:
     if typ.__class__.__name__ == "GenericMeta":  # Py3.6
-        orig_bases = typ.__orig_bases__
+        orig_bases = getattr(typ, "__orig_bases__", None)
         if orig_bases and orig_bases[0] in (list, tuple, dict, set):
             return cast(type, orig_bases[0])
     return cast(type, getattr(typ, "__origin__", typ))

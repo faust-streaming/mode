@@ -142,7 +142,7 @@ class ServiceBase(ServiceT):
         return self._loop
 
     @loop.setter
-    def loop(self, loop: asyncio.AbstractEventLoop) -> None:
+    def loop(self, loop: Optional[asyncio.AbstractEventLoop]) -> None:
         self._loop = loop
 
 
@@ -835,28 +835,36 @@ class Service(ServiceBase, ServiceCallbacks):
 
     async def _actually_start(self) -> None:  # noqa: C901
         """Start the service."""
+        # NOTE: ``should_stop`` is re-read into a local before every check:
+        # the flag flips while the awaits below are suspended, and mypy
+        # otherwise folds repeated reads of the property into the result of
+        # the first one and reports the later checks as dead code.
         for _ in [1]:  # to use break
             if not self.restart_count:
                 for dep in self.on_init_dependencies():
                     self.add_dependency(dep)
                 await self.on_first_start()
-                if self.should_stop:
+                should_stop = self.should_stop
+                if should_stop:
                     break
             self.exit_stack.__enter__()
             await self.async_exit_stack.__aenter__()
-            if self.should_stop:
+            should_stop = self.should_stop
+            if should_stop:
                 break
             try:
                 self._log_mundane("Starting...")
                 await self.on_start()
-                if self.should_stop:
+                should_stop = self.should_stop
+                if should_stop:
                     break
                 for task in self._get_tasks():
                     self.add_future(task.fun(self))
                 for child in self._children:
                     if child is not None:
                         await child.maybe_start()
-                    if self.should_stop:
+                    should_stop = self.should_stop
+                    if should_stop:
                         break
                 self.log.debug("Started.")
                 await self.on_started()
@@ -1079,7 +1087,12 @@ class Service(ServiceBase, ServiceCallbacks):
         ```
         """
         sleepfun = sleep or self.sleep
-        if self.should_stop:
+        # NOTE: ``should_stop`` is re-read into a local before every check:
+        # the flag flips while this generator is suspended, and mypy
+        # otherwise folds repeated reads of the property into the result of
+        # the first one and reports the later checks as dead code.
+        should_stop = self.should_stop
+        if should_stop:
             return
         try:
             async for sleep_time in Timer(
@@ -1089,10 +1102,12 @@ class Service(ServiceBase, ServiceCallbacks):
                 clock=clock,
                 sleep=sleepfun,
             ):
-                if self.should_stop:
+                should_stop = self.should_stop
+                if should_stop:
                     break
                 yield sleep_time
-                if self.should_stop:
+                should_stop = self.should_stop
+                if should_stop:
                     break
         finally:
             # this is required to collect the async_generator_athrow()

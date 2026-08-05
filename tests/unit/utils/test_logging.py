@@ -558,6 +558,10 @@ class test_FileLogProxy:
     def test_isatty(self):
         assert not FileLogProxy(get_logger("foo")).isatty()
 
+    def test_line_buffering(self):
+        # `TextIO.line_buffering` is an attribute, not a method.
+        assert FileLogProxy(get_logger("foo")).line_buffering is False
+
 
 def test_redirect_stdouts():
     prev_stdout = sys.stdout

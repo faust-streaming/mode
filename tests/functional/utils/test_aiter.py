@@ -47,6 +47,11 @@ async def test_arange():
     assert arange(10).index(3) == 3
 
 
+def test_arange__requires_stop():
+    with pytest.raises(TypeError):
+        arange(None)
+
+
 @pytest.mark.asyncio
 async def test_aslice():
     assert await alist(aslice(arange(100), 10)) == list(range(10))

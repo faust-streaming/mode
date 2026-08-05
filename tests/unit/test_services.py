@@ -8,6 +8,7 @@ import pytest
 
 from mode import Service
 from mode.services import Diag, ServiceTask, WaitResult
+from mode.types import ServiceT
 from mode.utils.logging import get_logger
 
 
@@ -70,6 +71,12 @@ async def test_start_stop():
     s.on_stopped_log.assert_called_with()
     s.on_shutdown_log.assert_called_with()
     assert s.state == "stopping"
+
+
+def test_ServiceT_requires_beacon():
+    # `beacon` is part of the ServiceT contract: ServiceBase reads it when
+    # formatting log messages, so implementations must provide it.
+    assert "beacon" in ServiceT.__abstractmethods__
 
 
 def test_state_stopped():

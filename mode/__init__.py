@@ -125,7 +125,7 @@ new_module = sys.modules[__name__] = _module(__name__)
 new_module.__dict__.update(
     {
         "__file__": __file__,
-        "__path__": __path__,  # type: ignore
+        "__path__": __path__,
         "__doc__": __doc__,
         "__all__": tuple(object_origins),
         "__version__": __version__,

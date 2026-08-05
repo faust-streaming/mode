@@ -65,23 +65,39 @@ __all__ = [
     "force_mapping",
 ]
 
+if typing.TYPE_CHECKING:
+    from _typeshed import SupportsRichComparison
+else:
+    SupportsRichComparison = Any
+
 T = TypeVar("T")
 T_co = TypeVar("T_co", covariant=True)
 KT = TypeVar("KT")
 VT = TypeVar("VT")
 _S = TypeVar("_S")
+#: `heapq` orders elements by comparing them, so a heap can only hold
+#: values that support `<`/`>` (`_typeshed.SupportsRichComparison`).
+_ComparableT = TypeVar("_ComparableT", bound="SupportsRichComparison")
 
 _Setlike = Union[Set[T], Iterable[T]]
 
 
-class Heap(MutableSequence[T]):
-    """Generic interface to `heapq`."""
+class Heap(MutableSequence[_ComparableT]):
+    """Generic interface to `heapq`.
 
-    def __init__(self, data: Optional[Sequence[T]] = None) -> None:
+    Elements have to be orderable: `heapq` maintains the heap invariant by
+    comparing them, so the element type is bound to
+    `_typeshed.SupportsRichComparison` -- anything defining `__lt__` or
+    `__gt__`.  `Heap[int]` and `Heap[str]` are fine, while an element type
+    with no ordering is rejected by the type checker instead of failing at
+    the first `push`.
+    """
+
+    def __init__(self, data: Optional[Sequence[_ComparableT]] = None) -> None:
         self.data = list(data or [])
         heapify(self.data)
 
-    def pop(self, index: int = 0) -> T:
+    def pop(self, index: int = 0) -> _ComparableT:
         """Pop the smallest item off the heap.
 
         Maintains the heap invariant.
@@ -93,11 +109,11 @@ class Heap(MutableSequence[T]):
                 "Heap can only pop index 0, please use h.data.pop(index)"
             )
 
-    def push(self, item: T) -> None:
+    def push(self, item: _ComparableT) -> None:
         """Push item onto heap, maintaining the heap invariant."""
         heappush(self.data, item)
 
-    def pushpop(self, item: T) -> T:
+    def pushpop(self, item: _ComparableT) -> _ComparableT:
         """Push item on the heap, then pop and return from the heap.
 
         The combined action runs more efficiently than
@@ -105,7 +121,7 @@ class Heap(MutableSequence[T]):
         """
         return heappushpop(self.data, item)
 
-    def replace(self, item: T) -> T:
+    def replace(self, item: _ComparableT) -> _ComparableT:
         """Pop and return the current smallest value, and add the new item.
 
         This is more efficient than :meth`pop` followed by `push`,
@@ -122,21 +138,25 @@ class Heap(MutableSequence[T]):
         """
         return heapreplace(self.data, item)
 
-    def nlargest(self, n: int, key: Optional[Callable] = None) -> list[T]:
+    def nlargest(
+        self, n: int, key: Optional[Callable] = None
+    ) -> list[_ComparableT]:
         """Find the n largest elements in the dataset."""
         if key is not None:
             return nlargest(n, self.data, key=key)
         else:
             return nlargest(n, self.data)
 
-    def nsmallest(self, n: int, key: Optional[Callable] = None) -> list[T]:
+    def nsmallest(
+        self, n: int, key: Optional[Callable] = None
+    ) -> list[_ComparableT]:
         """Find the n smallest elements in the dataset."""
         if key is not None:
             return nsmallest(n, self.data, key=key)
         else:
             return nsmallest(n, self.data)
 
-    def insert(self, index: int, value: T) -> None:
+    def insert(self, index: int, value: _ComparableT) -> None:
         self.data.insert(index, value)
 
     def __str__(self) -> str:
@@ -146,19 +166,19 @@ class Heap(MutableSequence[T]):
         return repr(self.data)
 
     @overload
-    def __getitem__(self, s: int) -> T: ...
+    def __getitem__(self, s: int) -> _ComparableT: ...
 
     @overload
-    def __getitem__(self, s: slice) -> MutableSequence[T]: ...
+    def __getitem__(self, s: slice) -> MutableSequence[_ComparableT]: ...
 
     def __getitem__(self, s: Any) -> Any:
         return self.data.__getitem__(s)
 
     @overload
-    def __setitem__(self, s: int, o: T) -> None: ...
+    def __setitem__(self, s: int, o: _ComparableT) -> None: ...
 
     @overload
-    def __setitem__(self, s: slice, o: Iterable[T]) -> None: ...
+    def __setitem__(self, s: slice, o: Iterable[_ComparableT]) -> None: ...
 
     def __setitem__(self, s: Any, o: Any) -> None:
         self.data.__setitem__(s, o)
@@ -264,7 +284,7 @@ class FastUserSet(MutableSet[T]):
     def __len__(self) -> int:
         return len(self.data)
 
-    def __or__(self, other: Set) -> Set[Union[T, object]]:
+    def __or__(self, other: Set[_S]) -> Set[Union[T, _S]]:
         return self.data.__or__(other)
 
     def __rand__(self, other: Set[T]) -> MutableSet[T]:
@@ -294,8 +314,8 @@ class FastUserSet(MutableSet[T]):
     def __str__(self) -> str:
         return str(self.data)
 
-    def __sub__(self, other: Set[Any]) -> MutableSet[object]:
-        return cast(MutableSet, self.data.__sub__(other))
+    def __sub__(self, other: Set[Any]) -> MutableSet[T]:
+        return cast(MutableSet[T], self.data.__sub__(other))
 
     def __xor__(self, other: Set) -> MutableSet[T]:
         return cast(MutableSet, self.data.__xor__(other))
@@ -331,7 +351,7 @@ class FastUserSet(MutableSet[T]):
         return self
 
     def __ior__(self, other: Set[_S]) -> "FastUserSet":
-        self.data.__ior__(other)
+        cast(MutableSet[Union[T, _S]], self.data).__ior__(other)
         return self
 
     def __isub__(self, other: Set[Any]) -> "FastUserSet[T]":
@@ -339,7 +359,7 @@ class FastUserSet(MutableSet[T]):
         return self
 
     def __ixor__(self, other: Set[_S]) -> "FastUserSet":
-        self.data.__ixor__(other)
+        cast(MutableSet[Union[T, _S]], self.data).__ixor__(other)
         return self
 
     def add(self, value: T) -> None:
@@ -548,29 +568,29 @@ class ManagedUserSet(FastUserSet[T]):
     def raw_update(self, *args: Any, **kwargs: Any) -> None:
         self.data.update(*args, **kwargs)  # type: ignore
 
-    def __iand__(self, other: Set[Any]) -> "FastUserSet":
-        self.on_change(added=set(), removed=cast(Set, self).difference(other))
+    def __iand__(self, other: Set[Any]) -> "ManagedUserSet[T]":
+        self.on_change(added=set(), removed=cast(set, self).difference(other))
         self.data.__iand__(other)
         return self
 
-    def __ior__(self, other: Set[_S]) -> "FastUserSet":
+    def __ior__(self, other: Set[_S]) -> "ManagedUserSet[T]":
         self.on_change(added=cast(set, other).difference(self), removed=set())
-        self.data.__ior__(other)
+        cast(MutableSet[Union[T, _S]], self.data).__ior__(other)
         return self
 
-    def __isub__(self, other: Set[Any]) -> "FastUserSet":
+    def __isub__(self, other: Set[Any]) -> "ManagedUserSet[T]":
         self.on_change(
             added=set(), removed=cast(set, self.data).intersection(other)
         )
         self.data.__isub__(other)
         return self
 
-    def __ixor__(self, other: Set[_S]) -> "FastUserSet":
+    def __ixor__(self, other: Set[_S]) -> "ManagedUserSet[T]":
         self.on_change(
             added=cast(set, other).difference(self.data),
             removed=cast(set, self.data).intersection(other),
         )
-        self.data.__ixor__(other)
+        cast(MutableSet[Union[T, _S]], self.data).__ixor__(other)
         return self
 
     def difference_update(self, other: _Setlike[T]) -> None:
@@ -633,7 +653,7 @@ class ManagedUserDict(FastUserDict[KT, VT]):
             for key, value in d.items():
                 self.on_key_set(key, value)
         for key, value in kwargs.items():
-            self.on_key_set(key, value)
+            self.on_key_set(cast(KT, key), value)
         self.data.update(*args, **kwargs)
 
     def clear(self) -> None:

@@ -173,13 +173,17 @@ class BaseSignal(BaseSignalT[T]):
         if isinstance(ref, ReferenceType):
             value = ref()
             return value is not None, value
-        return True, ref()
+        # Receivers connected with ``weak=False`` are stored as a
+        # zero-argument callable returning the handler (see ``_connect``),
+        # and are always alive.
+        deref = cast(Callable[[], SignalHandlerT], ref)
+        return True, deref()
 
     def _create_ref(self, fun: SignalHandlerT) -> SignalHandlerRefT:
         if hasattr(fun, "__func__") and hasattr(fun, "__self__"):
             return cast(SignalHandlerRefT, WeakMethod(cast(MethodType, fun)))
         else:
-            return ref(fun)
+            return cast(SignalHandlerRefT, ref(fun))
 
     def _create_id(self, sender: Any) -> int:
         try:

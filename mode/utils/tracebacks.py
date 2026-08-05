@@ -6,7 +6,13 @@ import io
 import sys
 from collections.abc import AsyncGenerator, Coroutine, Generator, Mapping
 from traceback import StackSummary, print_list, walk_tb
-from types import FrameType, TracebackType
+from types import (
+    AsyncGeneratorType,
+    CoroutineType,
+    FrameType,
+    GeneratorType,
+    TracebackType,
+)
 from typing import IO, Any, Optional, Union, cast
 
 __all__ = ["Traceback", "format_task_stack", "print_task_stack"]
@@ -213,7 +219,7 @@ class Traceback(_BaseTraceback):
                     break
             frames.append(current_frame)
             num_frames += 1
-            current_frame = current_frame.f_back  # type: ignore
+            current_frame = current_frame.f_back
         frames.reverse()
         prev: Optional[_BaseTraceback] = None
         root: Optional[_BaseTraceback] = None
@@ -242,7 +248,7 @@ class Traceback(_BaseTraceback):
         return root
 
     @classmethod
-    def _detect_frame(cls, obj: Any) -> FrameType:
+    def _detect_frame(cls, obj: Any) -> Optional[FrameType]:
         if inspect.isasyncgen(obj):
             return cls._get_agen_frame(obj)
         return cls._get_coroutine_frame(obj)
@@ -250,14 +256,14 @@ class Traceback(_BaseTraceback):
     @classmethod
     def _get_coroutine_frame(
         cls, coro: Union[Coroutine, Generator]
-    ) -> FrameType:
+    ) -> Optional[FrameType]:
         try:
             if inspect.isgenerator(coro):
                 # is a @asyncio.coroutine wrapped generator
-                return cast(Generator, coro).gi_frame
+                return cast(GeneratorType, coro).gi_frame
             else:
                 # is an async def function
-                return cast(Coroutine, coro).cr_frame
+                return cast(CoroutineType, coro).cr_frame
         except AttributeError as exc:
             raise cls._what_is_this(coro) from exc
 
@@ -268,7 +274,9 @@ class Traceback(_BaseTraceback):
         )
 
     @classmethod
-    def _get_agen_frame(cls, agen: AsyncGenerator) -> FrameType:
+    def _get_agen_frame(
+        cls, agen: AsyncGeneratorType[Any, Any]
+    ) -> Optional[FrameType]:
         try:
             return agen.ag_frame
         except AttributeError as exc:
@@ -280,10 +288,10 @@ class Traceback(_BaseTraceback):
     ) -> Any:
         if inspect.isasyncgen(coro):
             # is a async def async-generator
-            return cast(AsyncGenerator, coro).ag_await
+            return cast(AsyncGeneratorType, coro).ag_await
         elif inspect.isgenerator(coro):
             # is a @asyncio.coroutine wrapped generator
-            return cast(Generator, coro).gi_yieldfrom
+            return cast(GeneratorType, coro).gi_yieldfrom
         else:
             # is an async def function
-            return cast(Coroutine, coro).cr_await
+            return cast(CoroutineType, coro).cr_await

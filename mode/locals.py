@@ -81,8 +81,10 @@ from collections.abc import (
     Awaitable,
     Coroutine,
     Generator,
+    ItemsView,
     Iterable,
     Iterator,
+    KeysView,
     Mapping,
     MutableMapping,
     MutableSequence,
@@ -95,6 +97,7 @@ from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from functools import wraps
 from types import GetSetDescriptorType, TracebackType
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     ClassVar,
@@ -108,6 +111,9 @@ from typing import (
 )
 
 from .utils.locals import LocalStack  # XXX compat
+
+if TYPE_CHECKING:
+    from _typeshed import SupportsKeysAndGetItem
 
 __all__ = [
     "AsyncContextManagerProxy",
@@ -171,7 +177,7 @@ def _default_cls_attr(
         instance.__getter = getter  # type: ignore
         return instance
 
-    def __get__(self: type, obj: Any, cls: Optional[type] = None) -> Any:
+    def __get__(self: Any, obj: Any, cls: Optional[type] = None) -> Any:
         return self.__getter(obj) if obj is not None else self
 
     return type(name, (type_,), {"__new__": __new__, "__get__": __get__})
@@ -282,7 +288,7 @@ class Proxy(Generic[T]):
         return self._get_class()
 
     @__class__.setter
-    def __class__(self, t: type[T]) -> None:
+    def __class__(self, t: type) -> None:
         raise NotImplementedError()
 
     def _get_current_object(self) -> T:
@@ -423,11 +429,15 @@ class CoroutineRole(Coroutine[T_co, T_contra, V_co]):
 
     def throw(
         self,
-        typ: type[BaseException],
-        val: Optional[BaseException] = None,
+        typ: Union[type[BaseException], BaseException],
+        val: object = None,
         tb: Optional[TracebackType] = None,
     ) -> T_co:
-        return self._get_coroutine().throw(typ, val, tb)
+        # `Coroutine.throw` is overloaded (exception type plus optional
+        # value, or a bare exception instance), and a proxy that forwards
+        # whatever it is given matches neither overload exactly.
+        throw = cast(Callable[..., T_co], self._get_coroutine().throw)
+        return throw(typ, val, tb)
 
     def close(self) -> None:
         return self._get_coroutine().close()
@@ -487,17 +497,25 @@ class AsyncGeneratorRole(AsyncGenerator[T_co, T_contra]):
 
     def athrow(
         self,
-        typ: type[BaseException],
-        val: Optional[BaseException] = None,
+        typ: Union[type[BaseException], BaseException],
+        val: object = None,
         tb: Optional[TracebackType] = None,
     ) -> Coroutine[Any, Any, T_co]:
-        return self._get_generator().athrow(typ, val, tb)
+        # See `CoroutineRole.throw`: `AsyncGenerator.athrow` is overloaded
+        # the same way.
+        athrow = cast(
+            Callable[..., Coroutine[Any, Any, T_co]],
+            self._get_generator().athrow,
+        )
+        return athrow(typ, val, tb)
 
     def aclose(self) -> Coroutine[Any, Any, None]:
         return self._get_generator().aclose()
 
     def __aiter__(self) -> AsyncGenerator[T_co, T_contra]:
-        return self._get_generator().__aiter__()
+        return cast(
+            AsyncGenerator[T_co, T_contra], self._get_generator().__aiter__()
+        )
 
 
 class AsyncGeneratorProxy(
@@ -588,13 +606,11 @@ class MutableSequenceRole(SequenceRole[T], MutableSequence[T]):
     def remove(self, object: T) -> None:
         self._get_sequence().remove(object)
 
-    def __iadd__(self, x: Iterable[T]) -> MutableSequence[T]:
-        return self._get_sequence().__iadd__(x)
+    def __iadd__(self, x: Iterable[T]) -> "MutableSequenceRole[T]":
+        return cast("MutableSequenceRole[T]", self._get_sequence().__iadd__(x))
 
 
-class MutableSequenceProxy(
-    Proxy[MutableSequence[T_co]], MutableSequenceRole[T_co]
-):
+class MutableSequenceProxy(Proxy[MutableSequence[T]], MutableSequenceRole[T]):
     """Proxy to `typing.MutableSequence` object."""
 
 
@@ -668,20 +684,22 @@ class MutableSetRole(SetRole[T], MutableSet[T]):
     def remove(self, element: T) -> None:
         self._get_set().remove(element)
 
-    def __ior__(self, s: Set[S]) -> MutableSet[Union[T, S]]:
-        return self._get_set().__ior__(s)
+    def __ior__(self, s: Set[S]) -> "MutableSetRole[Union[T, S]]":
+        data = cast(MutableSet[Union[T, S]], self._get_set())
+        return cast("MutableSetRole[Union[T, S]]", data.__ior__(s))
 
-    def __iand__(self, s: Set[Any]) -> MutableSet[T]:
-        return self._get_set().__iand__(s)
+    def __iand__(self, s: Set[Any]) -> "MutableSetRole[T]":
+        return cast("MutableSetRole[T]", self._get_set().__iand__(s))
 
-    def __ixor__(self, s: Set[S]) -> MutableSet[Union[T, S]]:
-        return self._get_set().__ixor__(s)
+    def __ixor__(self, s: Set[S]) -> "MutableSetRole[Union[T, S]]":
+        data = cast(MutableSet[Union[T, S]], self._get_set())
+        return cast("MutableSetRole[Union[T, S]]", data.__ixor__(s))
 
-    def __isub__(self, s: Set[Any]) -> MutableSet[T]:
-        return self._get_set().__isub__(s)
+    def __isub__(self, s: Set[Any]) -> "MutableSetRole[T]":
+        return cast("MutableSetRole[T]", self._get_set().__isub__(s))
 
 
-class MutableSetProxy(Proxy[MutableSet[T_co]], MutableSetRole[T_co]):
+class MutableSetProxy(Proxy[MutableSet[T]], MutableSetRole[T]):
     """Proxy to `typing.MutableSet` object."""
 
 
@@ -710,7 +728,7 @@ class AsyncContextManagerRole(AbstractAsyncContextManager[T_co]):
 
     def __aenter__(self) -> Coroutine[Any, Any, T_co]:
         obj = self._get_current_object()  # type: ignore
-        return obj.__aenter__()
+        return cast(Coroutine[Any, Any, T_co], obj.__aenter__())
 
     def __aexit__(
         self,
@@ -748,10 +766,10 @@ class MappingRole(Mapping[KT, VT_co]):
     def get(self, *args: Any, **kwargs: Any) -> Any:
         return self._get_mapping().get(*args, **kwargs)
 
-    def items(self) -> Set[tuple[KT, VT_co]]:
+    def items(self) -> ItemsView[KT, VT_co]:
         return self._get_mapping().items()
 
-    def keys(self) -> Set[KT]:
+    def keys(self) -> KeysView[KT]:
         return self._get_mapping().keys()
 
     def values(self) -> ValuesView[VT_co]:
@@ -802,11 +820,14 @@ class MutableMappingRole(MappingRole[KT, VT], MutableMapping[KT, VT]):
     def setdefault(self, k: KT, *args: Any) -> VT:
         return self._get_mapping().setdefault(k, *args)
 
+    # Mirrors `MutableMapping.update` in typeshed, minus the overloads
+    # whose `self:` annotation restricts `**kwargs` to str-keyed mappings
+    # -- an overload implementation cannot satisfy those.
     @overload
-    def update(self, __m: Mapping[KT, VT], **kwargs: VT) -> None: ...
+    def update(self, m: "SupportsKeysAndGetItem[KT, VT]", /) -> None: ...
 
     @overload
-    def update(self, __m: Iterable[tuple[KT, VT]], **kwargs: VT) -> None: ...
+    def update(self, m: Iterable[tuple[KT, VT]], /) -> None: ...
 
     @overload
     def update(self, **kwargs: VT) -> None: ...
