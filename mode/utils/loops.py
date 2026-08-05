@@ -103,9 +103,7 @@ def call_asap(
     if _is_unix_loop(loop):
         return _call_asap(loop, callback, *args, context=context)
     if context is not None:
-        return loop.call_soon_threadsafe(  # type: ignore
-            callback, *args, context=context
-        )
+        return loop.call_soon_threadsafe(callback, *args, context=context)
     return loop.call_soon_threadsafe(callback, *args)
 
 
@@ -117,7 +115,7 @@ def _call_asap(
         loop._check_callback(callback, "call_soon_threadsafe")
     loop._call_soon(callback, args, context)
     if context is not None:
-        handle = asyncio.Handle(callback, list(args), loop, context)  # type: ignore
+        handle = asyncio.Handle(callback, list(args), loop, context)
     else:
         handle = asyncio.Handle(callback, list(args), loop)
     if handle._source_traceback:  # type: ignore

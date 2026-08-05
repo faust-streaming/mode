@@ -4,7 +4,7 @@ import math
 import signal
 import traceback
 from types import FrameType
-from typing import Any
+from typing import Any, Optional
 
 from .services import Service
 from .utils.logging import get_logger
@@ -85,7 +85,7 @@ class BlockingDetector(Service):
     def _arm(self, timeout: float) -> None:
         arm_alarm(timeout)
 
-    def _on_alarm(self, signum: int, frame: FrameType) -> None:
+    def _on_alarm(self, signum: int, frame: Optional[FrameType]) -> None:
         msg = f"Blocking detected (timeout={self.timeout})"
         stack = "".join(traceback.format_stack(frame))
         self.log.warning(

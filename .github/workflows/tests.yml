@@ -56,11 +56,37 @@ jobs:
         with:
             token: ${{ secrets.CODECOV_TOKEN }}
 
+  typecheck:
+    name: "Type check with mypy"
+    runs-on: "ubuntu-latest"
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+            fetch-depth: 0
+      # mypy needs CPython 3.10+ and cannot run under PyPy, so type checks
+      # run once here instead of on every leg of the test matrix.
+      - uses: "actions/setup-python@v4"
+        with:
+          python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: |
+            requirements-docs.txt
+            requirements-tests.txt
+            pyproject.toml
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run type checks
+        run: scripts/typecheck.sh
+
   check:  # This job does nothing and is only used for the branch protection
     name: ✅ Ensure the required checks passing
     if: always()
     needs:
       - tests
+      - typecheck
     runs-on: ubuntu-latest
     steps:
     - name: Decide whether the needed jobs succeeded or failed

@@ -38,7 +38,7 @@ except ImportError:
         return t
 
 
-def _is_class_var(typ):
+def _is_class_var(typ: Any) -> bool:
     # Works for typing.ClassVar and types.GenericAlias (Python 3.9+)
     origin = getattr(typ, "__origin__", None)
     return origin is ClassVar
@@ -62,7 +62,11 @@ else:
         shadows, which is what makes it safe to use per-class inside a
         bounded MRO walk (see ``local_annotations`` below).
         """
-        ann = cls.__dict__.get("__annotations__", {})
+        # `vars(cls)` is `cls.__dict__`; spelled this way because linters
+        # rewrite a literal `cls.__dict__["__annotations__"]` read into a
+        # `get_annotations()` call, which is the very function this
+        # backports.
+        ann = vars(cls).get("__annotations__", {})
         if eval_str:
             ann = {
                 k: (eval(v, globals, locals) if isinstance(v, str) else v)  # noqa: S307
@@ -71,7 +75,7 @@ else:
         return dict(ann)
 
 
-def _get_globalns(cls):
+def _get_globalns(cls: type) -> dict[str, Any]:
     # Get the global namespace for a class
     module = sys.modules.get(cls.__module__)
     return module.__dict__ if module else {}
@@ -100,7 +104,7 @@ __all__ = [
 # Workaround for https://bugs.python.org/issue29581
 try:
 
-    @typing.no_type_check  # type: ignore
+    @typing.no_type_check
     class _InitSubclassCheck(metaclass=abc.ABCMeta):
         ident: int
 
@@ -110,7 +114,7 @@ try:
             self.ident = ident
             super().__init__(*args, **kwargs)
 
-    @typing.no_type_check  # type: ignore
+    @typing.no_type_check
     class _UsingKwargsInNew(_InitSubclassCheck, ident=909): ...
 
 except TypeError:
@@ -271,6 +275,8 @@ def _detect_main_name() -> str:  # pragma: no cover
     except (AttributeError, KeyError):  # ipython/REPL
         return "__main__"
     else:
+        if filename is None:
+            return "__main__"
         path = Path(filename).absolute()
         node = path.parent
         seen = []
@@ -283,7 +289,7 @@ def _detect_main_name() -> str:  # pragma: no cover
         return ".".join([*seen, path.stem])
 
 
-def _normalize_forwardref(t):
+def _normalize_forwardref(t: Any) -> Any:
     if isinstance(t, str):
         return t
     origin = getattr(t, "__origin__", None)
@@ -499,7 +505,7 @@ def eval_type(
         typ = _eval_type(typ, globalns, localns)
     if typ in invalid_types:
         raise InvalidAnnotation(typ)
-    return alias_types.get(typ, typ)
+    return cast(type, alias_types.get(typ, typ))
 
 
 def iter_mro_reversed(cls: type, stop: type) -> Iterable[type]:
@@ -536,7 +542,7 @@ def iter_mro_reversed(cls: type, stop: type) -> Iterable[type]:
     wanted = False
     for subcls in reversed(cls.__mro__):
         if wanted:
-            yield cast(type, subcls)
+            yield subcls
         else:
             wanted = subcls == stop
 
@@ -558,7 +564,7 @@ def is_optional(typ: type) -> bool:
     return False
 
 
-def _remove_optional(typ: type, *, find_origin: bool = False) -> Any:
+def _remove_optional(typ: Any, *, find_origin: bool = False) -> Any:
     origin = get_origin(typ)
     args = get_args(typ)
     if origin in UNION_TYPES:
@@ -582,7 +588,7 @@ def _remove_optional(typ: type, *, find_origin: bool = False) -> Any:
 
 def _py36_maybe_unwrap_GenericMeta(typ: type) -> type:
     if typ.__class__.__name__ == "GenericMeta":  # Py3.6
-        orig_bases = typ.__orig_bases__
+        orig_bases = getattr(typ, "__orig_bases__", None)
         if orig_bases and orig_bases[0] in (list, tuple, dict, set):
             return cast(type, orig_bases[0])
     return cast(type, getattr(typ, "__origin__", typ))

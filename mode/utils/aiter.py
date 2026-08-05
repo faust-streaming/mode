@@ -108,9 +108,11 @@ class arange(AsyncIterable[int]):
         self, *slice_args: Optional[int], **slice_kwargs: Optional[int]
     ) -> None:
         s = slice(*slice_args, **slice_kwargs)
-        self.start = s.start or 0
-        self.stop = s.stop
-        self.step = s.step or 1
+        if s.stop is None:
+            raise TypeError("arange() requires a stop argument")
+        self.start: int = s.start or 0
+        self.stop: int = s.stop
+        self.step: int = s.step or 1
         self._range = range(self.start, self.stop, self.step)
 
     def count(self, n: int) -> int:
@@ -165,6 +167,8 @@ async def chunks(it: AsyncIterable[T], n: int) -> AsyncIterable[list[T]]:
     [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 10]]
     ```
     """
-    ait = aiter(it)
+    # `aiter` is a singledispatch function, so its return type cannot be
+    # tied to the type of its argument.
+    ait = cast(AsyncIterator[T], aiter(it))
     async for item in ait:
         yield [item] + [x async for x in aslice(ait, n - 1)]

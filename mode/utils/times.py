@@ -9,7 +9,7 @@ from contextlib import AbstractAsyncContextManager
 from datetime import timedelta
 from functools import singledispatch
 from types import TracebackType
-from typing import Callable, NamedTuple, Optional, Union
+from typing import Callable, NamedTuple, Optional, Union, cast
 
 from .text import pluralize
 
@@ -201,9 +201,13 @@ class TokenBucket(Bucket):
 
 
 @singledispatch
-def rate(r: float) -> float:
+def rate(r: Optional[Union[float, str]]) -> float:
     """Convert rate string (`"100/m"`, `"2/h"` or `"0.5/s"`) to seconds."""
-    return r
+    # The parameter is annotated with every type this dispatches on, as
+    # `functools.singledispatch` requires the registered types to be
+    # subtypes of the fallback implementation's first argument.
+    # Anything reaching the fallback is already a rate in seconds.
+    return cast(float, r)
 
 
 @rate.register(str)
@@ -235,9 +239,13 @@ def rate_limit(
 
 
 @singledispatch
-def want_seconds(s: float) -> float:
+def want_seconds(s: Seconds) -> float:
     """Convert `Seconds` to float."""
-    return s
+    # `str` and `timedelta` have registered implementations below, so the
+    # fallback only ever sees numbers.  The parameter is annotated with the
+    # full `Seconds` union because `functools.singledispatch` requires the
+    # registered types to be subtypes of it.
+    return cast(float, s)
 
 
 @want_seconds.register(str)

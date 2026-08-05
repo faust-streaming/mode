@@ -4,8 +4,12 @@ freezegun>=0.3.11
 hypothesis>=3.31; platform_python_implementation != "PyPy"
 hypothesis>=3.31,<6.156; platform_python_implementation == "PyPy"
 # mypy 2.x depends on ast-serialize, a Rust extension that does not build on
-# PyPy < 3.11; mypy does not support running under PyPy anyway.
-mypy>=1.8.0; platform_python_implementation != "PyPy"
+# PyPy < 3.11; mypy does not support running under PyPy anyway.  It also
+# needs CPython 3.10+ to run, while mode itself still supports 3.9, so the
+# typecheck job (scripts/typecheck.sh) runs on a newer interpreter.
+# The 2.0 floor is the first release whose bundled typeshed `mode` checks
+# clean against.
+mypy>=2.0.0; platform_python_implementation != "PyPy" and python_version >= "3.10"
 pytest-aiofiles>=0.2.0
 pytest-asyncio==0.21.1
 pytest-base-url>=2.1.0

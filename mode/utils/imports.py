@@ -142,7 +142,7 @@ class FactoryMapping(FastUserDict, Generic[_T]):
             self.aliases.update(dict(load_extension_class_names(namespace)))
 
     @cached_property
-    def data(self) -> MutableMapping:  # type: ignore
+    def data(self) -> MutableMapping:
         return self.aliases
 
 
@@ -285,7 +285,7 @@ def symbol_by_name(
 
     try:
         try:
-            module = imp(  # type: ignore
+            module = imp(
                 module_name or "",
                 package=package,
                 # kwargs can be used to extend symbol_by_name when a custom
@@ -383,7 +383,9 @@ def load_extension_class_names(
             )
     # Python <3.10
     else:
-        for ep in eps.get(namespace, []):
+        # `entry_points()` returned a mapping of group name to entry
+        # points back then; the modern `EntryPoints` has no `.get`.
+        for ep in cast(Any, eps).get(namespace, []):
             yield RawEntrypointExtension(
                 ep.name, ":".join([ep.module, ep.attr])
             )
