@@ -197,11 +197,8 @@ def patch_importlib_metadata_entry_points():
         ep2.name = "ep2"
         ep2.module = "bar"
         ep2.attr = "c"
-        # For Python >=3.10
         mock_entry_points = Mock()
         mock_entry_points.select.return_value = [ep1, ep2]
-        # For Python <3.10
-        mock_entry_points.get.return_value = [ep1, ep2]
         importlib_metadata_entry_points.return_value = mock_entry_points
         yield
 

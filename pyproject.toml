@@ -22,7 +22,7 @@ dynamic = [
 ]
 description = "AsyncIO Service-based programming"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 keywords = ["asyncio", "service", "bootsteps", "graph", "coroutine"]
 authors = [
     { name = "Ask Solem Hoel", email= "ask@robinhood.com" },
@@ -35,7 +35,6 @@ classifiers = [
     "Development Status :: 5 - Production/Stable",
     "License :: OSI Approved :: BSD License",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -54,7 +53,6 @@ classifiers = [
 dependencies = [
     "colorlog>=6.0.0,<7.0.0",
     "croniter>=2.0.0,<6.0.0",
-    "importlib-metadata; python_version < '3.10'",
     "mypy_extensions",
 ]
 
@@ -151,7 +149,7 @@ warn_unused_configs = true
 warn_unused_ignores = true
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 line-length = 79
 exclude = [
     ".bzr",
@@ -209,7 +207,15 @@ ignore = [
     "PT006",
 
     # Allow pytest.mark.asyncio without the parentheses
-    "PT023"
+    "PT023",
+
+    # Raising target-version to py310 makes pyupgrade want `X | Y` /
+    # `X | None` annotations and `collections.abc` imports throughout
+    # (~350 findings).  That migration is worth doing, but as its own
+    # mechanical change -- some of these aliases are evaluated at runtime.
+    "UP007",
+    "UP035",
+    "UP045"
 ]
 
 [tool.ruff.lint.per-file-ignores]

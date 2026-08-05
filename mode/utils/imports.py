@@ -13,6 +13,7 @@ from collections.abc import (
     MutableMapping,
 )
 from contextlib import contextmanager, suppress
+from importlib.metadata import entry_points
 from types import ModuleType
 from typing import (
     Any,
@@ -24,12 +25,6 @@ from typing import (
     Union,
     cast,
 )
-
-try:
-    from importlib.metadata import entry_points  # Python >= 3.10
-except ImportError:
-    from importlib_metadata import entry_points  # type: ignore # Python < 3.10
-
 
 from .collections import FastUserDict
 from .objects import cached_property
@@ -374,21 +369,8 @@ def load_extension_class_names(
     [('msgpack', 'faust_msgpack:msgpack')]
     ```
     """
-    eps = entry_points()
-    # Python 3.10+
-    if hasattr(eps, "select"):
-        for ep in eps.select(group=namespace):
-            yield RawEntrypointExtension(
-                ep.name, ":".join([ep.module, ep.attr])
-            )
-    # Python <3.10
-    else:
-        # `entry_points()` returned a mapping of group name to entry
-        # points back then; the modern `EntryPoints` has no `.get`.
-        for ep in cast(Any, eps).get(namespace, []):
-            yield RawEntrypointExtension(
-                ep.name, ":".join([ep.module, ep.attr])
-            )
+    for ep in entry_points().select(group=namespace):
+        yield RawEntrypointExtension(ep.name, ":".join([ep.module, ep.attr]))
 
 
 @contextmanager
