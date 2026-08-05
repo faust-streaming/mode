@@ -76,20 +76,20 @@ KT = TypeVar("KT")
 VT = TypeVar("VT")
 _S = TypeVar("_S")
 #: `heapq` orders elements by comparing them, so a heap can only hold
-#: values that support `<`/`>`.
-_HT = TypeVar("_HT", bound="SupportsRichComparison")
+#: values that support `<`/`>` (`_typeshed.SupportsRichComparison`).
+_ComparableT = TypeVar("_ComparableT", bound="SupportsRichComparison")
 
 _Setlike = Union[Set[T], Iterable[T]]
 
 
-class Heap(MutableSequence[_HT]):
+class Heap(MutableSequence[_ComparableT]):
     """Generic interface to `heapq`."""
 
-    def __init__(self, data: Optional[Sequence[_HT]] = None) -> None:
+    def __init__(self, data: Optional[Sequence[_ComparableT]] = None) -> None:
         self.data = list(data or [])
         heapify(self.data)
 
-    def pop(self, index: int = 0) -> _HT:
+    def pop(self, index: int = 0) -> _ComparableT:
         """Pop the smallest item off the heap.
 
         Maintains the heap invariant.
@@ -101,11 +101,11 @@ class Heap(MutableSequence[_HT]):
                 "Heap can only pop index 0, please use h.data.pop(index)"
             )
 
-    def push(self, item: _HT) -> None:
+    def push(self, item: _ComparableT) -> None:
         """Push item onto heap, maintaining the heap invariant."""
         heappush(self.data, item)
 
-    def pushpop(self, item: _HT) -> _HT:
+    def pushpop(self, item: _ComparableT) -> _ComparableT:
         """Push item on the heap, then pop and return from the heap.
 
         The combined action runs more efficiently than
@@ -113,7 +113,7 @@ class Heap(MutableSequence[_HT]):
         """
         return heappushpop(self.data, item)
 
-    def replace(self, item: _HT) -> _HT:
+    def replace(self, item: _ComparableT) -> _ComparableT:
         """Pop and return the current smallest value, and add the new item.
 
         This is more efficient than :meth`pop` followed by `push`,
@@ -130,21 +130,25 @@ class Heap(MutableSequence[_HT]):
         """
         return heapreplace(self.data, item)
 
-    def nlargest(self, n: int, key: Optional[Callable] = None) -> list[_HT]:
+    def nlargest(
+        self, n: int, key: Optional[Callable] = None
+    ) -> list[_ComparableT]:
         """Find the n largest elements in the dataset."""
         if key is not None:
             return nlargest(n, self.data, key=key)
         else:
             return nlargest(n, self.data)
 
-    def nsmallest(self, n: int, key: Optional[Callable] = None) -> list[_HT]:
+    def nsmallest(
+        self, n: int, key: Optional[Callable] = None
+    ) -> list[_ComparableT]:
         """Find the n smallest elements in the dataset."""
         if key is not None:
             return nsmallest(n, self.data, key=key)
         else:
             return nsmallest(n, self.data)
 
-    def insert(self, index: int, value: _HT) -> None:
+    def insert(self, index: int, value: _ComparableT) -> None:
         self.data.insert(index, value)
 
     def __str__(self) -> str:
@@ -154,19 +158,19 @@ class Heap(MutableSequence[_HT]):
         return repr(self.data)
 
     @overload
-    def __getitem__(self, s: int) -> _HT: ...
+    def __getitem__(self, s: int) -> _ComparableT: ...
 
     @overload
-    def __getitem__(self, s: slice) -> MutableSequence[_HT]: ...
+    def __getitem__(self, s: slice) -> MutableSequence[_ComparableT]: ...
 
     def __getitem__(self, s: Any) -> Any:
         return self.data.__getitem__(s)
 
     @overload
-    def __setitem__(self, s: int, o: _HT) -> None: ...
+    def __setitem__(self, s: int, o: _ComparableT) -> None: ...
 
     @overload
-    def __setitem__(self, s: slice, o: Iterable[_HT]) -> None: ...
+    def __setitem__(self, s: slice, o: Iterable[_ComparableT]) -> None: ...
 
     def __setitem__(self, s: Any, o: Any) -> None:
         self.data.__setitem__(s, o)
