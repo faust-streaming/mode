@@ -52,7 +52,22 @@ You can run the format script to make your change compliant:
 + ruff check mode tests --fix
 ```
 
-_The script uses [ruff](https://github.com/astral-sh/ruff) & [mypy](https://mypy-lang.org/)._
+_The script uses [ruff](https://github.com/astral-sh/ruff)._
+
+### Type check the code
+
+[mypy](https://mypy-lang.org/) is an optional dependency, so it is not
+installed by `requirements.txt`:
+
+```sh
+(venv) $ pip install -r requirements-typecheck.txt
+(venv) $ ./scripts/typecheck.sh
++ mypy -p mode
+Success: no issues found in 45 source files
+```
+
+It has to be run on CPython -- mypy exits with an error under PyPy -- which
+is why it is a separate CI job rather than part of `./scripts/lint.sh`.
 
 ### Run tests
 

@@ -1,0 +1,11 @@
+# Optional: only needed to run scripts/typecheck.sh.
+#
+# Deliberately not pulled in by requirements.txt.  mypy refuses to run on
+# PyPy -- `mypy/main.py` exits immediately with "Running mypy on PyPy is
+# not supported yet" -- and mypy 2.x depends on ast-serialize, a Rust
+# extension with no PyPy wheels, so requiring it would break installing
+# the test dependencies on the PyPy legs of the matrix.
+#
+# The 2.0 floor is the first release whose bundled typeshed `mode` checks
+# clean against.
+mypy>=2.0.0
