@@ -83,7 +83,15 @@ _Setlike = Union[Set[T], Iterable[T]]
 
 
 class Heap(MutableSequence[_ComparableT]):
-    """Generic interface to `heapq`."""
+    """Generic interface to `heapq`.
+
+    Elements have to be orderable: `heapq` maintains the heap invariant by
+    comparing them, so the element type is bound to
+    `_typeshed.SupportsRichComparison` -- anything defining `__lt__` or
+    `__gt__`.  `Heap[int]` and `Heap[str]` are fine, while an element type
+    with no ordering is rejected by the type checker instead of failing at
+    the first `push`.
+    """
 
     def __init__(self, data: Optional[Sequence[_ComparableT]] = None) -> None:
         self.data = list(data or [])
