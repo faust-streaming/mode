@@ -8,6 +8,12 @@ Everything below was measured on **CPython 3.14.0rc2 free-threading build**
 CPython 3.14.0rc2 used as the control. The reproducers live in
 `tests/freethreading/stress.py`.
 
+These are races, so the failure *rates* quoted below move around between
+runs — the numbers are representative single runs, not stable constants.
+On repeated runs the free-threaded `cached_property` figure ranged from
+104/300 to 164/300, and the cold-import figure from 14/25 to 18/25. What
+does not move is which side of the table fails.
+
 ## Summary
 
 `mode` is pure Python, so there is nothing to port: it installs, imports
