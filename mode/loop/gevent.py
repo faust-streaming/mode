@@ -2,10 +2,25 @@
 
 import asyncio
 import os
+import sysconfig
 import warnings
 from typing import Optional, cast
 
 from mode.utils.loops import get_event_loop
+
+# NOTE: Deliberately the *build* flag, not `sys._is_gil_enabled()`.  The
+# runtime check would already read True by the time gevent has been
+# imported below, which is exactly the situation being reported.
+if sysconfig.get_config_var("Py_GIL_DISABLED"):
+    warnings.warn(
+        "The gevent loop is not usable on free-threaded builds: importing "
+        "gevent re-enables the GIL (gevent.libev.corecext does not declare "
+        "that it is safe without it), so selecting this loop silently gives "
+        "up free threading for the whole process.  Use the 'aio' or 'uvloop' "
+        "loop to keep the GIL disabled.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
 
 os.environ["GEVENT_LOOP"] = "mode.loop._gevent_loop.Loop"
 try:
