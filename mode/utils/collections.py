@@ -2,9 +2,10 @@
 
 import abc
 import collections.abc
+import sys
 import threading
 import typing
-from collections import OrderedDict, UserList
+from collections import UserList
 from collections.abc import (
     ItemsView,
     Iterable,
@@ -49,6 +50,12 @@ else:
         class LazyObject: ...
 
         class LazySettings: ...
+
+
+#: True when running on a free-threaded (:pep:`703`) build with the GIL
+#: actually disabled.  Checked at runtime rather than build time so that
+#: ``PYTHON_GIL=1`` on a free-threaded interpreter is respected.
+FREE_THREADED: bool = not getattr(sys, "_is_gil_enabled", lambda: True)()
 
 
 __all__ = [
@@ -438,21 +445,38 @@ class LRUCache(FastUserDict, MutableMapping[KT, VT], MappingViewProxy):
             the *Least Recently Used* key will be discarded from the
             cache.
         thread_safety (bool): Enable if multiple OS threads are going
-            to access/mutate the cache.
+            to access/mutate the cache.  Defaults to :const:`True` on
+            free-threaded builds, where there is no GIL to make unguarded
+            access incidentally safe, and :const:`False` otherwise (which
+            is what it has always been).
+
+    Note:
+        The backing store is a plain :class:`dict`, not an
+        :class:`~collections.OrderedDict`.  Both preserve insertion order
+        (guaranteed for `dict` since Python 3.7), but on free-threaded
+        builds only `dict` is safe to mutate concurrently:
+        `OrderedDict` keeps a separate linked list that racing threads
+        can corrupt badly enough to segfault the interpreter, whereas
+        `dict` has per-object locking.
     """
 
     limit: Optional[int]
     thread_safety: bool
     _mutex: AbstractContextManager
-    data: OrderedDict
+    data: dict
 
     def __init__(
-        self, limit: Optional[int] = None, *, thread_safety: bool = False
+        self,
+        limit: Optional[int] = None,
+        *,
+        thread_safety: Optional[bool] = None,
     ) -> None:
         self.limit = limit
-        self.thread_safety = thread_safety
+        self.thread_safety = (
+            FREE_THREADED if thread_safety is None else thread_safety
+        )
         self._mutex = self._new_lock()
-        self.data: OrderedDict = OrderedDict()
+        self.data: dict = {}
 
     def __getitem__(self, key: KT) -> VT:
         with self._mutex:
@@ -466,11 +490,23 @@ class LRUCache(FastUserDict, MutableMapping[KT, VT], MappingViewProxy):
             if limit and len(data) > limit:
                 # pop additional items in case limit exceeded
                 for _ in range(len(data) - limit):
-                    data.popitem(last=False)
+                    self._popitem_first()
+
+    def _popitem_first(self) -> tuple[KT, VT]:
+        # `dict` only pops from the right, so emulate the
+        # `OrderedDict.popitem(last=False)` this used to call.
+        # Caller must hold the mutex.
+        try:
+            key = next(iter(self.data))
+        except StopIteration:
+            raise KeyError("dictionary is empty") from None
+        return key, self.data.pop(key)
 
     def popitem(self, *, last: bool = True) -> tuple[KT, VT]:
         with self._mutex:
-            return self.data.popitem(last)
+            if last:
+                return self.data.popitem()
+            return self._popitem_first()
 
     def __setitem__(self, key: KT, value: VT) -> None:
         # remove least recently used key.
@@ -479,8 +515,17 @@ class LRUCache(FastUserDict, MutableMapping[KT, VT], MappingViewProxy):
                 self.data.pop(next(iter(self.data)))
             self.data[key] = value
 
+    # NOTE: Iteration takes a snapshot under the mutex and yields from that
+    # snapshot with the mutex released, rather than holding it across the
+    # yields.  Holding a lock across a yield keeps it held for as long as
+    # the *consumer* takes to iterate -- and forever if the consumer
+    # abandons the generator half way, since the mutex is only released
+    # when the generator is closed.  Snapshotting also means a concurrent
+    # writer cannot invalidate an iteration already in progress, which is
+    # what "dictionary changed size during iteration" used to be.
+
     def __iter__(self) -> Iterator:
-        return iter(self.data)
+        return self._keys()
 
     def keys(self) -> KeysView[KT]:
         return ProxyKeysView(self)
@@ -488,29 +533,24 @@ class LRUCache(FastUserDict, MutableMapping[KT, VT], MappingViewProxy):
     def _keys(self) -> Iterator[KT]:
         # userdict.keys in py3k calls __getitem__
         with self._mutex:
-            yield from self.data.keys()
+            keys = list(self.data)
+        yield from keys
 
     def values(self) -> ValuesView[VT]:
         return ProxyValuesView(self)
 
     def _values(self) -> Iterator[VT]:
         with self._mutex:
-            for k in self:
-                try:
-                    yield self.data[k]
-                except KeyError:  # pragma: no cover
-                    pass
+            values = list(self.data.values())
+        yield from values
 
     def items(self) -> ItemsView[KT, VT]:
         return ProxyItemsView(self)
 
     def _items(self) -> Iterator[tuple[KT, VT]]:
         with self._mutex:
-            for k in self:
-                try:
-                    yield (k, self.data[k])
-                except KeyError:  # pragma: no cover
-                    pass
+            items = list(self.data.items())
+        yield from items
 
     def incr(self, key: KT, delta: int = 1) -> int:
         with self._mutex:

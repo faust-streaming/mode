@@ -1,9 +1,17 @@
 """Free-threading (PEP 703) stress reproducers for mode.
 
-This file is intentionally NOT under the ``testpaths`` configured in
-``pyproject.toml``, because some of the checks below can segfault a
-free-threaded interpreter by design -- that is the finding, not a bug in
-the harness.  Run it directly:
+Every check here should now report ``ok``.  Each one reproduced a real
+defect before the fix it guards, and they are kept because they are
+probabilistic and heavy -- they hammer each surface with 16 threads over
+many trials, which is how the ``tuple(r)``-is-not-atomic problem in
+`mode.signals` was caught after the first attempt at that fix passed the
+cheaper tests.
+
+The deterministic versions live in
+`tests/functional/test_thread_safety.py` and run in CI.  This file is
+deliberately NOT under the ``testpaths`` configured in ``pyproject.toml``:
+before the fixes some of these checks segfaulted the interpreter, and a
+regression here should not take the whole test run down with it.
 
 ```sh
 uv python install 3.14t
@@ -12,11 +20,10 @@ VIRTUAL_ENV=.venv-ft uv pip install -e . -r requirements-tests.txt
 .venv-ft/bin/python tests/freethreading/stress.py
 ```
 
-Run it again under a GIL-enabled interpreter of the same version to get
-the control numbers -- most of these checks pass there, which is what
-makes them free-threading findings rather than plain bugs.
+Run it under a GIL-enabled interpreter of the same version too -- the
+fixes are meant to hold on both.
 
-See `docs/free-threading.md` for the measured results and analysis.
+See `docs/free-threading.md` for the measurements and the analysis.
 """
 
 import sys
@@ -61,14 +68,15 @@ def report(name, errors, note=""):
 
 
 # --------------------------------------------------------------------------
-# Finding 1: LRUCache is backed by OrderedDict with thread_safety=False by
-# default.  Concurrent mutate+iterate segfaults a free-threaded interpreter
-# (plain dict is safe there; OrderedDict's C implementation is not).
+# Defect 1 (fixed): LRUCache was backed by OrderedDict with
+# thread_safety=False by default, so concurrent mutate+iterate segfaulted a
+# free-threaded interpreter.  It is a plain dict now, and thread_safety
+# defaults to on for free-threaded builds.
 # --------------------------------------------------------------------------
 def check_lru_default(trials=60):
     from mode.utils.collections import LRUCache
 
-    print("  (this check can segfault on a free-threaded build)", flush=True)
+    print("  (this check segfaulted before the fix)", flush=True)
     bad = 0
     for _ in range(trials):
         cache = LRUCache(limit=50)
@@ -108,10 +116,11 @@ def check_lru_thread_safe(trials=20):
 
 
 # --------------------------------------------------------------------------
-# Finding 2: cached_property.__get__ is a non-atomic check-then-act on
-# obj.__dict__, so racing threads can each compute and hand out a distinct
+# Defect 2 (fixed): cached_property.__get__ was a non-atomic check-then-act
+# on obj.__dict__, so racing threads each computed and handed out a distinct
 # object.  ServiceProxy documents @cached_property as the way to build the
-# proxied service, so the duplicate is a real singleton violation.
+# proxied service, so the duplicate was a real singleton violation.  The
+# miss path is double-checked under a lock now.
 # --------------------------------------------------------------------------
 def check_cached_property(trials=300):
     from mode.utils.objects import cached_property
@@ -182,8 +191,9 @@ def check_service_proxy(trials=200):
 
 
 # --------------------------------------------------------------------------
-# Finding 3: Signal iterates its receiver set while connect/disconnect
-# mutate it.  Pre-existing -- this fails on GIL builds too.
+# Defect 4 (fixed): Signal iterated its receiver set while connect/disconnect
+# mutated it.  Pre-existing -- this failed on GIL builds too.  It snapshots
+# with list() now (NOT tuple(), which does not lock the source set).
 # --------------------------------------------------------------------------
 def check_signal(trials=30):
     from mode.signals import Signal
@@ -344,11 +354,11 @@ def check_managed_user_dict():
 
 
 # --------------------------------------------------------------------------
-# Finding 3: mode/__init__.py swaps sys.modules["mode"] for a _module
-# instance at the END of its body, so a thread importing mode concurrently
-# can be handed the original pre-swap module -- which has no __getattr__ --
-# and every lazily-exported name raises AttributeError.  Pre-existing, but
-# far more likely with the GIL disabled.
+# Defect 3 (fixed): mode/__init__.py swapped sys.modules["mode"] for a
+# _module instance at the END of its body, so a thread importing mode
+# concurrently could be handed the original pre-swap module -- which has no
+# __getattr__ -- and every lazily-exported name raised AttributeError.  It
+# uses a PEP 562 module __getattr__ now, so there is no swap to race with.
 #
 # Must run in a subprocess: the race only exists on a *cold* import.
 # --------------------------------------------------------------------------
@@ -404,7 +414,7 @@ def main():
     check_managed_user_dict()
     check_lru_thread_safe()
 
-    print("\n-- findings --")
+    print("\n-- regression checks (all should be ok) --")
     check_lazy_module()
     check_signal()
     check_cached_property()

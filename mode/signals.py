@@ -159,7 +159,19 @@ class BaseSignal(BaseSignalT[T]):
     ) -> tuple[set[SignalHandlerT], set[SignalHandlerRefT]]:
         live_receivers: set[SignalHandlerT] = set()
         dead_refs: set[SignalHandlerRefT] = set()
-        for href in r:
+        # NOTE: Iterate a snapshot.  `r` is the live receiver set shared by
+        # this signal and every clone of it, and `connect`/`disconnect`
+        # mutate it from whatever thread or task calls them -- iterating it
+        # directly raises "Set changed size during iteration".  The caller
+        # also discards dead refs from `r` using what this returns, which
+        # is itself a mutation during iteration.
+        #
+        # It must be `list(r)`, NOT `tuple(r)`: on free-threaded builds
+        # `list()` (like `set()` and `set.copy()`) takes the source set's
+        # per-object lock for the duration of the copy, while `tuple()`
+        # falls back to the generic iterator protocol and does not -- so
+        # `tuple(r)` raises the very error this snapshot exists to avoid.
+        for href in list(r):
             alive, value = self._is_alive(href)
             if alive and value is not None:
                 live_receivers.add(value)

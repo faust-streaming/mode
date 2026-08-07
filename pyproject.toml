@@ -40,6 +40,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Free Threading :: 2 - Beta",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
     "Operating System :: POSIX",
@@ -61,6 +62,9 @@ eventlet = [
     "faust-aioeventlet",
     "dnspython",
 ]
+# NOTE: Not usable on free-threaded (PEP 703) builds.  gevent's
+# `gevent.libev.corecext` does not declare that it is safe without the GIL,
+# so importing it re-enables the GIL and silently undoes free threading.
 gevent = [
     "asyncio-gevent~=0.2",
 ]

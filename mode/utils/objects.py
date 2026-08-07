@@ -3,6 +3,7 @@
 import abc
 import collections.abc
 import sys
+import threading
 import types
 import typing
 from collections.abc import (
@@ -678,6 +679,7 @@ class cached_property(Generic[RT]):
         self.__name__ = fget.__name__
         self.__module__ = fget.__module__
         self.class_attribute: Optional[str] = class_attribute
+        self.__lock = threading.RLock()
 
     def is_set(self, obj: Any) -> bool:
         return self.__name__ in obj.__dict__
@@ -690,8 +692,25 @@ class cached_property(Generic[RT]):
         try:
             return cast(RT, obj.__dict__[self.__name__])
         except KeyError:
-            value = obj.__dict__[self.__name__] = self.__get(obj)
-            return value
+            pass
+        # NOTE: The lookup above is the fast path and stays lock-free: once
+        # the value is cached, reading it is a plain dict hit.  Only the
+        # miss path locks, and it re-checks after acquiring, because
+        # "look, then compute, then store" is not atomic.  Without this,
+        # two threads that miss together each run `fget` and each store a
+        # *different* object, so callers disagree about which one is the
+        # cached one.  That is not merely wasted work here: `ServiceProxy`
+        # documents `@cached_property _service` as the way to build the
+        # proxied service, and a duplicate there means `start()` and
+        # `stop()` can act on different Service instances.  The GIL made
+        # this nearly impossible to hit; free-threaded builds hit it
+        # constantly.
+        with self.__lock:
+            try:
+                return cast(RT, obj.__dict__[self.__name__])
+            except KeyError:
+                value = obj.__dict__[self.__name__] = self.__get(obj)
+                return value
 
     def __set__(self, obj: Any, value: RT) -> None:
         if self.__set is not None:

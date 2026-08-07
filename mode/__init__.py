@@ -2,13 +2,11 @@
 
 __version__ = "0.0.1"
 
-import sys
 import typing
 from collections.abc import Mapping, Sequence
 
-# Lazy loading.
-# - See werkzeug/__init__.py for the rationale behind this.
-from types import ModuleType
+# Lazy loading, via the PEP 562 module __getattr__ defined at the bottom
+# of this file.
 from typing import Any
 
 # -eof meta-
@@ -88,47 +86,47 @@ for module, items in all_by_module.items():
         object_origins[item] = module
 
 
-class _module(ModuleType):
-    """Customized Python module."""
+# NOTE: This is a :pep:`562` module-level ``__getattr__``, and deliberately
+# *not* the older trick of defining a ``ModuleType`` subclass and swapping it
+# into ``sys.modules[__name__]`` at the end of this file.
+#
+# That swap was a race: it only happened once the module body had finished,
+# so a thread calling ``import mode`` while another thread was still
+# executing this file could be handed the original, pre-swap module object --
+# which has no ``__getattr__`` on it -- and every lazily-exported name below
+# raised ``AttributeError: module 'mode' has no attribute 'Service'``.  The
+# replacement module also carried no ``__spec__``, which denied the import
+# machinery the ``_initializing`` flag it uses to make the second thread wait.
+# Rare under the GIL, common on free-threaded (:pep:`703`) builds.
+#
+# A module ``__getattr__`` needs no swap at all, so the race cannot happen.
+def __getattr__(name: str) -> Any:
+    try:
+        origin = object_origins[name]
+    except KeyError:
+        raise AttributeError(
+            f"module {__name__!r} has no attribute {name!r}"
+        ) from None
+    module = __import__(origin, None, None, [name])
+    # Bind every name this module provides, not just the requested one, so
+    # that later lookups are plain globals and never reach __getattr__ again.
+    namespace = globals()
+    for extra_name in all_by_module[origin]:
+        namespace[extra_name] = getattr(module, extra_name)
+    return namespace[name]
 
-    def __getattr__(self, name: str) -> Any:
-        if name in object_origins:
-            module = __import__(object_origins[name], None, None, [name])
-            for extra_name in all_by_module[module.__name__]:
-                setattr(self, extra_name, getattr(module, extra_name))
-            return getattr(module, name)
-        return ModuleType.__getattribute__(self, name)
 
-    def __dir__(self) -> Sequence[str]:
-        result = list(new_module.__all__)
-        result.extend(
-            (
-                "__file__",
-                "__path__",
-                "__doc__",
-                "__all__",
-                "__docformat__",
-                "__name__",
-                "__path__",
-                "VERSION",
-                "version_info",
-                "__package__",
-            )
-        )
-        return result
-
-
-# keep a reference to this module so that it's not garbage collected
-old_module = sys.modules[__name__]
-
-new_module = sys.modules[__name__] = _module(__name__)
-new_module.__dict__.update(
-    {
-        "__file__": __file__,
-        "__path__": __path__,
-        "__doc__": __doc__,
-        "__all__": tuple(object_origins),
-        "__version__": __version__,
-        "__package__": __package__,
-    }
-)
+def __dir__() -> Sequence[str]:
+    return [
+        *__all__,
+        "__file__",
+        "__path__",
+        "__doc__",
+        "__all__",
+        "__docformat__",
+        "__name__",
+        "VERSION",
+        "version_info",
+        "__package__",
+        "__version__",
+    ]
