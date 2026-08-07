@@ -1,4 +1,6 @@
 import abc
+import dis
+import types
 from collections.abc import (
     AsyncGenerator,
     AsyncIterable,
@@ -11,6 +13,7 @@ from collections.abc import (
     Sequence,
     Set,
 )
+from pathlib import Path
 from unittest.mock import MagicMock, Mock
 
 import pytest
@@ -755,3 +758,63 @@ def test_Proxy_from_source__no_abstractmethods():
     s = Source()
     p = ProxySource(lambda: s)
     assert p._get_current_object() is s
+
+
+class test_Proxy_class_body_bytecode:
+    """Guard the `__class__` property construction in `Proxy`.
+
+    `Proxy.__init_subclass__` calls zero-argument `super()`, which makes the
+    compiler add an implicit `__class__` closure cell to the class.  That
+    turns a bare `__class__` in the class body (as written by the
+    `@property` / `@__class__.setter` decorator pair) into something other
+    than a plain namespace lookup: CPython still finds the property, but
+    PyPy finds the empty cell and raises `NameError` at import time.
+
+    CPython cannot reproduce that failure, so asserting on the emitted
+    bytecode is the only way to keep the regression from coming back.
+    """
+
+    def _proxy_class_body(self):
+        import mode.locals
+
+        source = Path(mode.locals.__file__).read_text()
+        module_code = compile(source, mode.locals.__file__, "exec")
+
+        def walk(code):
+            for const in code.co_consts:
+                if isinstance(const, types.CodeType):
+                    yield const
+                    yield from walk(const)
+
+        bodies = [c for c in walk(module_code) if c.co_name == "Proxy"]
+        assert len(bodies) == 1, "expected exactly one Proxy class body"
+        return bodies[0]
+
+    def test_super_still_creates_the_class_cell(self):
+        # If this ever stops being true the guard below is unnecessary --
+        # but so is the workaround it protects, so both should be revisited
+        # together rather than one silently rotting.
+        assert "__class__" in self._proxy_class_body().co_cellvars
+
+    #: Opcodes that resolve a *name* through a namespace.  The compiler also
+    #: emits cell plumbing for `__class__` (MAKE_CELL / LOAD_FAST* /
+    #: LOAD_CLOSURE, used to populate `__classcell__`), which is implicit,
+    #: unavoidable and harmless -- only an actual lookup is the bug.
+    NAME_LOOKUP_OPCODES = frozenset(
+        {"LOAD_NAME", "LOAD_CLASSDEREF", "LOAD_GLOBAL"}
+    )
+
+    def test_class_body_never_looks_up_the_bare_name(self):
+        lookups = [
+            instruction
+            for instruction in dis.get_instructions(self._proxy_class_body())
+            if instruction.opname in self.NAME_LOOKUP_OPCODES
+            and instruction.argval == "__class__"
+        ]
+        assert not lookups, (
+            "Proxy's class body looks up the bare name `__class__` "
+            f"({[i.opname for i in lookups]}). Build the property with "
+            "`property(_get_class, _set_class)` instead of the "
+            "`@property`/`@__class__.setter` decorator pair -- the latter "
+            "reads the name and breaks the import on PyPy."
+        )
