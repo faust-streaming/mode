@@ -254,8 +254,13 @@ mode's custom `GEVENT_LOOP` hook fails. Presumably gevent used to resolve
 that setting lazily and no longer does.
 
 `mode.loop` has no test coverage, which is how this went unnoticed. Fixing
-it means building `Loop` lazily rather than at module scope, and is a
-separate piece of work from anything on this page.
+it would mean building `Loop` lazily rather than at module scope.
+
+Rather than repair a backend that cannot work on free-threaded builds
+anyway, the gevent loop is **deprecated**: selecting it raises a
+`DeprecationWarning` naming the breakage and pointing at `aio`/`uvloop`,
+and it is slated for removal in a future major release. Nothing is removed
+yet, so this is not a breaking change.
 
 ## CI
 
