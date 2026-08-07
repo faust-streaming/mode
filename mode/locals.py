@@ -152,6 +152,24 @@ __all__ = [
 PYPY = hasattr(sys, "pypy_version_info")
 SLOTS_ISSUE_PRESENT = sys.version_info < (3, 7)
 
+
+def _property_with_setter(
+    fset: Callable[[Any, Any], None],
+) -> Callable[[Callable[[Any], Any]], property]:
+    """Build a `property` from a getter, with the setter supplied up front.
+
+    Exists so that `Proxy` can define a `__class__` property without the
+    usual `@property` / `@__class__.setter` pair, which has to *read* the
+    bare name `__class__` in the class body to attach the setter.  See the
+    note on `Proxy.__init_subclass__`.
+    """
+
+    def _decorate(fget: Callable[[Any], Any]) -> property:
+        return property(fget, fset)
+
+    return _decorate
+
+
 T = TypeVar("T")
 S = TypeVar("S")
 T_co = TypeVar("T_co", covariant=True)
@@ -199,6 +217,12 @@ class Proxy(Generic[T]):
         )
 
     def __init_subclass__(self, source: Optional[type[T]] = None) -> None:
+        # NOTE: Merely referencing the name `super` here makes the compiler
+        # add an implicit `__class__` closure cell to this class -- the
+        # explicit `super(Proxy, self)` form does not avoid it, because the
+        # compiler cannot know which form is meant.  That cell is why the
+        # `__class__` property further down is built the way it is; see the
+        # note there before changing either.
         super().__init_subclass__()
         if source is not None:
             self._init_from_source(source)
@@ -286,19 +310,31 @@ class Proxy(Generic[T]):
     def _set_class(self, t: type) -> None:
         raise NotImplementedError()
 
-    # NOTE: Built with `property()` rather than the `@property` /
-    # `@__class__.setter` decorator pair, because that pair *reads* the bare
-    # name `__class__` in the class body -- and here that is not a plain
-    # namespace lookup.  `__init_subclass__` above calls zero-argument
-    # `super()`, which makes the compiler add an implicit `__class__` closure
-    # cell to this class.  CPython still resolves the bare name to the
-    # property object defined moments earlier, but PyPy resolves it to that
-    # cell, which is empty until the class object exists -- so importing this
-    # module raises `NameError: name '__class__' is not defined`.  PyPy only
-    # takes that path with a trace function installed, so it shows up under
-    # coverage and not otherwise.  Storing the name without ever loading it
-    # sidesteps the whole question on every interpreter.
-    __class__: Any = property(_get_class, _set_class)
+    # NOTE: Two constraints meet here, and only this shape satisfies both.
+    #
+    # 1. The name must be bound with `def`, not with a plain assignment.
+    #    This class has an implicit `__class__` closure cell (see
+    #    __init_subclass__ above), and on PyPy a class-body *assignment* to
+    #    a name that is also a cell variable does not reach the class
+    #    namespace -- so `__class__ = property(...)` leaves no descriptor
+    #    behind, attribute access silently falls back to `type.__class__`,
+    #    and the proxy reports itself instead of the object it wraps.
+    #
+    # 2. The class body must never *read* the bare name `__class__`, which
+    #    the usual `@property` / `@__class__.setter` pair has to do in
+    #    order to attach the setter.  With the cell present that read
+    #    resolves to the cell rather than to the property, and the cell is
+    #    empty until the class object exists -- so on PyPy importing this
+    #    module raises `NameError: name '__class__' is not defined`.  (PyPy
+    #    only takes that path with a trace function installed, which is why
+    #    it appears under coverage and not otherwise.)
+    #
+    # Passing the setter to the decorator up front keeps the `def` binding
+    # while removing the read.  Both halves are pinned by
+    # tests/unit/test_locals.py::test_Proxy_class_body_bytecode.
+    @_property_with_setter(_set_class)
+    def __class__(self) -> Any:
+        return self._get_class()
 
     def _get_current_object(self) -> T:
         """Get current object.
