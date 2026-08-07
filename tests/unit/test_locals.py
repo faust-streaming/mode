@@ -1,5 +1,4 @@
 import abc
-import dis
 import types
 from collections.abc import (
     AsyncGenerator,
@@ -761,20 +760,29 @@ def test_Proxy_from_source__no_abstractmethods():
 
 
 class test_Proxy_class_body_bytecode:
-    """Guard the `__class__` property in `Proxy` against the PyPy import bug.
+    """Guard `Proxy` against the PyPy `__class__` cell bug.
 
-    The class body reads the bare name `__class__` (the
-    `@property` / `@__class__.setter` pair attaches the setter to the
-    property of that name).  That is a plain namespace lookup *only* while
-    the class has no implicit `__class__` closure cell -- and zero-argument
-    `super()` anywhere in the body creates one.  With the cell present,
-    PyPy resolves the read to it rather than to the property, and the cell
-    is empty until the class object exists, so importing mode.locals raises
-    `NameError: name '__class__' is not defined`.
+    `Proxy` defines a `__class__` property.  That is fine so long as the
+    class body has no implicit `__class__` closure cell -- but the compiler
+    adds one as soon as any method in the body so much as *names* `super`
+    (it cannot tell the zero-argument form from the explicit one).
 
-    CPython resolves the same read to the property either way, so it cannot
-    reproduce the failure at all.  Asserting on the compiled class body is
-    the only check a CPython-only run can make.
+    With that cell present, PyPy -- and only with a trace function
+    installed, i.e. under coverage -- resolves every mention of the name
+    `__class__` in the class body to the cell instead of the class
+    namespace.  Both directions break:
+
+      * reading it (as `@__class__.setter` must) hits the cell while it is
+        still empty, so importing mode.locals raises
+        `NameError: name '__class__' is not defined`;
+      * binding it writes to the cell, so no descriptor is left on the
+        class and every proxy reports itself instead of the object it
+        wraps.
+
+    CPython resolves both to the class namespace either way, so it cannot
+    reproduce any of this -- the compiled class body is the only thing a
+    CPython-only run can check.  `_cooperative_init_subclass` keeps the
+    cell from being created; these tests keep it that way.
     """
 
     def _proxy_class_body(self):
@@ -793,55 +801,22 @@ class test_Proxy_class_body_bytecode:
         assert len(bodies) == 1, "expected exactly one Proxy class body"
         return bodies[0]
 
-    #: Opcodes that resolve a *name* through a namespace.  The compiler
-    #: also emits cell plumbing for `__class__` (MAKE_CELL / LOAD_FAST* /
-    #: LOAD_CLOSURE, to populate `__classcell__`), which is implicit and
-    #: unavoidable -- only an actual lookup is the bug.
-    NAME_LOOKUP_OPCODES = frozenset(
-        {"LOAD_NAME", "LOAD_CLASSDEREF", "LOAD_GLOBAL"}
-    )
-
-    def test_class_body_never_looks_up_the_bare_name(self):
-        lookups = [
-            instruction
-            for instruction in dis.get_instructions(self._proxy_class_body())
-            if instruction.opname in self.NAME_LOOKUP_OPCODES
-            and instruction.argval == "__class__"
-        ]
-        assert not lookups, (
-            "Proxy's class body looks up the bare name `__class__` "
-            f"({[i.opname for i in lookups]}), which resolves to the empty "
-            "implicit class cell on PyPy and breaks `import mode.locals`. "
-            "Use the `@_property_with_setter(_set_class)` form rather than "
-            "`@property` + `@__class__.setter`."
-        )
-
-    def test_the_name_is_bound_with_def(self):
-        # A plain assignment (`__class__ = property(...)`) does not reach
-        # the class namespace on PyPy, because the name is also a cell
-        # variable -- the descriptor is silently lost and the proxy then
-        # reports itself instead of the object it wraps.  So `def` is
-        # required, not merely preferred.
-        #
-        # CPython emits STORE_NAME for both spellings, so the store opcode
-        # cannot tell them apart.  The presence of a nested code object
-        # named `__class__` can: only `def` compiles one.
-        body = self._proxy_class_body()
-        compiled_functions = [
-            const.co_name
-            for const in body.co_consts
-            if isinstance(const, types.CodeType)
-        ]
-        assert "__class__" in compiled_functions, (
-            "Proxy's `__class__` property is not defined with `def`. A plain "
-            "assignment is lost on PyPy because `__class__` is also a cell "
-            "variable here; use "
-            "`@_property_with_setter(_set_class)` over a `def __class__`."
+    def test_class_body_has_no_implicit_class_cell(self):
+        assert "__class__" not in self._proxy_class_body().co_cellvars, (
+            "Proxy's class body has an implicit `__class__` closure cell. "
+            "Something in it names `super` (or reads `__class__`) inside a "
+            "method -- even the explicit `super(Proxy, self)` form is "
+            "enough. That breaks the `__class__` property on PyPy under "
+            "coverage. Route the call through the module-level "
+            "`_cooperative_init_subclass` helper instead."
         )
 
     def test_the_property_is_installed_on_the_class(self):
-        # The failure mode this pairs with: if `__class__` never lands in
-        # the class namespace, attribute access silently falls back to
-        # `type.__class__` and the proxy reports itself instead of the
-        # object it wraps.
+        # The runtime half of the same invariant, and the one that catches
+        # it on PyPy directly: if `__class__` never lands in the class
+        # namespace, attribute access falls back to `type.__class__` and
+        # the proxy reports itself rather than the object it wraps.
         assert isinstance(Proxy.__dict__["__class__"], property)
+
+    def test_the_property_still_forwards(self):
+        assert Proxy(lambda: "hello").__class__ is str

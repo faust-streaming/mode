@@ -153,21 +153,25 @@ PYPY = hasattr(sys, "pypy_version_info")
 SLOTS_ISSUE_PRESENT = sys.version_info < (3, 7)
 
 
-def _property_with_setter(
-    fset: Callable[[Any, Any], None],
-) -> Callable[[Callable[[Any], Any]], property]:
-    """Build a `property` from a getter, with the setter supplied up front.
+def _cooperative_init_subclass(cls: "type[Proxy[Any]]") -> None:
+    """Call the next ``__init_subclass__`` in ``Proxy``'s MRO.
 
-    Exists so that `Proxy` can define a `__class__` property without the
-    usual `@property` / `@__class__.setter` pair, which has to *read* the
-    bare name `__class__` in the class body to attach the setter.  See the
-    note on `Proxy.__init_subclass__`.
+    This lives at module level, outside the class body, for one reason:
+    naming ``super`` inside a method of ``Proxy`` would make the compiler
+    add an implicit ``__class__`` closure cell to that class.  ``Proxy``
+    defines a ``__class__`` property, and on PyPy -- with a trace function
+    installed, i.e. under coverage -- a class body that has such a cell
+    resolves *every* mention of the name ``__class__`` to the cell rather
+    than to the class namespace.  Reading it then raises ``NameError:
+    name '__class__' is not defined`` at import time, and binding it
+    leaves no descriptor on the class at all, so proxies start reporting
+    themselves instead of the object they wrap.
+
+    Keeping the cell from existing keeps ``__class__`` an ordinary name in
+    that class body, which is what every interpreter has always handled.
+    Pinned by tests/unit/test_locals.py::test_Proxy_class_body_bytecode.
     """
-
-    def _decorate(fget: Callable[[Any], Any]) -> property:
-        return property(fget, fset)
-
-    return _decorate
+    super(Proxy, cls).__init_subclass__()
 
 
 T = TypeVar("T")
@@ -217,13 +221,12 @@ class Proxy(Generic[T]):
         )
 
     def __init_subclass__(self, source: Optional[type[T]] = None) -> None:
-        # NOTE: Merely referencing the name `super` here makes the compiler
-        # add an implicit `__class__` closure cell to this class -- the
-        # explicit `super(Proxy, self)` form does not avoid it, because the
-        # compiler cannot know which form is meant.  That cell is why the
-        # `__class__` property further down is built the way it is; see the
-        # note there before changing either.
-        super().__init_subclass__()
+        # NOTE: Delegated to a module-level helper on purpose -- do not
+        # inline this back to `super().__init_subclass__()`.  Naming `super`
+        # anywhere in this class body makes the compiler add an implicit
+        # `__class__` closure cell, which breaks the `__class__` property
+        # below on PyPy.  See `_cooperative_init_subclass`.
+        _cooperative_init_subclass(self)
         if source is not None:
             self._init_from_source(source)
         elif self.__proxy_source__ is not None:
@@ -307,34 +310,16 @@ class Proxy(Generic[T]):
     def _get_class(self) -> type[T]:
         return self._get_current_object().__class__
 
-    def _set_class(self, t: type) -> None:
-        raise NotImplementedError()
-
-    # NOTE: Two constraints meet here, and only this shape satisfies both.
-    #
-    # 1. The name must be bound with `def`, not with a plain assignment.
-    #    This class has an implicit `__class__` closure cell (see
-    #    __init_subclass__ above), and on PyPy a class-body *assignment* to
-    #    a name that is also a cell variable does not reach the class
-    #    namespace -- so `__class__ = property(...)` leaves no descriptor
-    #    behind, attribute access silently falls back to `type.__class__`,
-    #    and the proxy reports itself instead of the object it wraps.
-    #
-    # 2. The class body must never *read* the bare name `__class__`, which
-    #    the usual `@property` / `@__class__.setter` pair has to do in
-    #    order to attach the setter.  With the cell present that read
-    #    resolves to the cell rather than to the property, and the cell is
-    #    empty until the class object exists -- so on PyPy importing this
-    #    module raises `NameError: name '__class__' is not defined`.  (PyPy
-    #    only takes that path with a trace function installed, which is why
-    #    it appears under coverage and not otherwise.)
-    #
-    # Passing the setter to the decorator up front keeps the `def` binding
-    # while removing the read.  Both halves are pinned by
-    # tests/unit/test_locals.py::test_Proxy_class_body_bytecode.
-    @_property_with_setter(_set_class)
+    # NOTE: This ordinary property spelling is only safe while the class
+    # body has no implicit `__class__` closure cell -- see
+    # `_cooperative_init_subclass` before adding any use of `super` here.
+    @property
     def __class__(self) -> Any:
         return self._get_class()
+
+    @__class__.setter
+    def __class__(self, t: type) -> None:
+        raise NotImplementedError()
 
     def _get_current_object(self) -> T:
         """Get current object.
