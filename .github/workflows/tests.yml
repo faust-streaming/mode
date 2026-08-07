@@ -25,6 +25,9 @@ jobs:
           - "3.12"
           - "3.13"
           - "3.14"
+          # Free-threaded (PEP 703) build.  Runs the same suite with the
+          # GIL disabled; see docs/free-threading.md.
+          - "3.14t"
         experimental: [ false ]
 
     steps:

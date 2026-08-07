@@ -1,79 +1,83 @@
 # Free-threaded Python (PEP 703) support
 
-Status of `mode` on free-threaded ("no-GIL") CPython builds, and what
-remains to be done.
+`mode` supports free-threaded ("no-GIL") CPython. This page records what
+was wrong before that was true, how each defect was fixed, and how to
+re-check the work.
 
-Everything below was measured on **CPython 3.14.0rc2 free-threading build**
+Everything here was measured on **CPython 3.14.0rc2 free-threading build**
 (`python3.14t`, `sys._is_gil_enabled() == False`), with a GIL-enabled
 CPython 3.14.0rc2 used as the control. The reproducers live in
-`tests/freethreading/stress.py`.
+`tests/freethreading/stress.py`; the regression tests that keep the fixes
+honest live in `tests/functional/test_thread_safety.py` and run on every
+leg of the CI matrix.
 
-These are races, so the failure *rates* quoted below move around between
-runs — the numbers are representative single runs, not stable constants.
-On repeated runs the free-threaded `cached_property` figure ranged from
-104/300 to 164/300, and the cold-import figure from 14/25 to 18/25. What
-does not move is which side of the table fails.
+The "before" numbers are races, so the failure *rates* move between runs —
+they are representative single runs, not stable constants. On repeated runs
+the free-threaded `cached_property` figure ranged from 104/300 to 164/300,
+and the cold-import figure from 14/25 to 18/25. What did not move is which
+side of each table failed.
 
-## Summary
+## Status
 
-`mode` is pure Python, so there is nothing to port: it installs, imports
-and passes its whole test suite on a free-threaded interpreter today. What
-free threading changes is that three latent thread-safety defects stop
-being theoretical. One of them crashes the interpreter.
+`mode` is pure Python, so there was never anything to *port* — it installed,
+imported and passed its test suite on a free-threaded interpreter from the
+start. What free threading changed is that four latent thread-safety defects
+stopped being theoretical. One of them crashed the interpreter.
 
-| | Free-threaded | GIL |
-|---|---|---|
-| `pip install mode-streaming` | works (`py3-none-any`) | works |
-| Import every `mode` module | GIL stays disabled | n/a |
-| `pytest tests/unit tests/functional` | 757 passed, 2 skipped | 757 passed, 2 skipped |
-| `LRUCache` under 16 threads | **SIGSEGV** | fine |
-| `cached_property` under 16 threads | **duplicate objects** | fine |
-| concurrent first `import mode` | fails 14/25 runs | fails 3/25 runs |
-| `Signal` under 16 threads | raises | raises (pre-existing) |
-| `mode[uvloop]` | GIL stays disabled | n/a |
-| `mode[gevent]` | **GIL re-enabled** | n/a |
+All four are fixed.
 
-## What already works
+| | Free-threaded (before) | Free-threaded (after) | GIL |
+|---|---|---|---|
+| `pip install mode-streaming` | works (`py3-none-any`) | works | works |
+| Import every `mode` module | GIL stays disabled | GIL stays disabled | n/a |
+| `pytest tests/unit tests/functional` | passes | passes | passes |
+| `LRUCache` under 16 threads | **SIGSEGV** | clean | clean |
+| `cached_property` under 16 threads | **duplicate objects** | one object | one object |
+| concurrent cold `import mode` | fails 14/25 runs | 0/25 | 0/25 |
+| `Signal` under 16 threads | raises 30/30 | 0/30 | 0/30 |
+| `mode[uvloop]` | GIL stays disabled | GIL stays disabled | n/a |
+| `mode[gevent]` | **GIL re-enabled** | **GIL re-enabled** | n/a |
 
-No packaging work is required. `mode` ships no C extensions, so the
+`mode[gevent]` is the one item that is not fixed, because it cannot be
+fixed here — see below.
+
+## What already worked
+
+No packaging work was required. `mode` ships no C extensions, so the
 existing `py3-none-any` wheel already installs and runs on `3.13t`/`3.14t`.
 Importing every module in the package leaves the GIL disabled, and the core
 dependencies (`colorlog`, `croniter`, `mypy_extensions`) are pure Python.
-The full test suite passes unmodified.
 
-These were stress-tested with 16 concurrent OS threads and found **safe**:
+These were stress-tested with 16 concurrent OS threads and found **safe**
+as they stood:
 
 - `Service` subclass creation — `__init_subclass__` writing the shared
-  `cls._tasks` mapping (`mode/services.py:527-553`)
+  `cls._tasks` mapping (`mode/services.py`)
 - `ServiceThread` start/stop from many threads concurrently
-- `get_event_loop()` — the `threading.local` cache in
-  `mode/utils/loops.py:15` correctly gives each thread its own loop with no
-  cross-thread leakage
+- `get_event_loop()` — the `threading.local` cache in `mode/utils/loops.py`
+  correctly gives each thread its own loop with no cross-thread leakage
 - `Node`/beacon tree traversal concurrent with mutation
 - `ManagedUserDict` / `FastUserDict` mutation
 - `annotations()` / `eval_type()`
 - `LocalStack` — already `ContextVar`-based, so correct by construction
 
-## Findings
+## The four defects, and their fixes
 
-### 1. `LRUCache` can segfault the interpreter — free-threading-specific
+### 1. `LRUCache` could segfault the interpreter
 
-**Severity: critical.**
+**Was: critical. Free-threading-specific.**
 
-`LRUCache.data` is a `collections.OrderedDict` and `thread_safety` defaults
-to `False`, which makes `self._mutex` a `nullcontext`
-(`mode/utils/collections.py:449-455`, `:523-526`). So `__setitem__` —
-which evicts via `self.data.pop(next(iter(self.data)))`
-(`mode/utils/collections.py:474-479`) — and `keys()`, which iterates the
-same dict (`mode/utils/collections.py:489-491`), run with no lock at all.
+`LRUCache.data` was a `collections.OrderedDict` and `thread_safety`
+defaulted to `False`, which made the mutex a `nullcontext`. So eviction in
+`__setitem__` and iteration in `keys()` ran with no lock at all.
 
-Under the GIL this is benign: 0/20 stress trials raised. On `3.14t` the
-same code first raises `RuntimeError: OrderedDict changed size during
-iteration` and then **segfaults**: 4 of 5 runs of a 60-trial loop exited
+Under the GIL this was benign: 0/20 stress trials raised. On `3.14t` the
+same code first raised `RuntimeError: OrderedDict changed size during
+iteration` and then **segfaulted** — 4 of 5 runs of a 60-trial loop exited
 with SIGSEGV, and a 5th hung.
 
-The cause was isolated to `OrderedDict` itself. Repeating the identical
-concurrent mutate-and-iterate loop against a bare container:
+The cause was `OrderedDict` itself. Repeating the identical concurrent
+mutate-and-iterate loop against a bare container:
 
 | container | free-threaded 3.14t |
 |---|---|
@@ -84,70 +88,73 @@ Free-threaded CPython gives plain `dict` per-object locking; `OrderedDict`'s
 C implementation did not get the same treatment, so concurrent mutation
 corrupts its internal linked list.
 
-Two independent fixes, either of which is sufficient:
+**Fixed** in `mode/utils/collections.py` by all three of:
 
-- Back `LRUCache` with a plain `dict`. Insertion order has been guaranteed
-  since 3.7, and the only `OrderedDict`-specific API used is
-  `popitem(last=...)`, which maps to `d.popitem()` for `last=True` and
-  `d.pop(next(iter(d)))` for `last=False`.
-- Default `thread_safety=True` on free-threaded builds. The existing mutex
-  path is sound — `LRUCache(thread_safety=True)` passed the stress test
-  cleanly — it is just off by default.
+- Backing the cache with a plain `dict`. Insertion order has been
+  guaranteed since 3.7, and the only `OrderedDict`-specific API in use was
+  `popitem(last=...)`, now served by `_popitem_first()` plus
+  `dict.popitem()`.
+- Defaulting `thread_safety` to `True` on free-threaded builds, via the new
+  `mode.utils.collections.FREE_THREADED` flag. It is checked at runtime
+  rather than build time, so `PYTHON_GIL=1` is respected. Passing
+  `thread_safety` explicitly still wins.
+- Snapshotting in `_keys`/`_values`/`_items` instead of holding the mutex
+  across `yield`. The old code kept the lock held for as long as the
+  *consumer* took to iterate — and forever if the consumer abandoned the
+  generator, since the lock was only released when the generator was
+  closed. That hazard was latent while the lock defaulted to off; turning
+  the lock on by default would have made it real.
 
 `LRUCache` is not used inside `mode` itself; it is exported utility surface
-(faust is a consumer), so the blast radius is downstream.
+(faust is a consumer), so the blast radius was downstream.
 
-### 2. `cached_property` hands different objects to different threads — free-threading-specific
+### 2. `cached_property` handed different objects to different threads
 
-**Severity: high.**
+**Was: high. Free-threading-specific.**
 
-`cached_property.__get__` (`mode/utils/objects.py:685-694`) is a
-check-then-act on `obj.__dict__`: try the key, catch `KeyError`, compute,
-store. Nothing makes that atomic.
+`cached_property.__get__` was a check-then-act on `obj.__dict__`: try the
+key, catch `KeyError`, compute, store. Nothing made that atomic.
 
 | | duplicate-object trials | computes per 300 properties |
 |---|---|---|
 | GIL 3.14 | 0/300 | 300 |
 | free-threaded 3.14t | **104/300** | 419 |
 
-This is not merely wasted work. `ServiceProxy` documents
-`@cached_property _service` as *the* way to build the proxied service
-(`mode/proxy.py:17-35`) — it is how the Faust App is constructed at module
-level. A reproducer that races 16 threads on `proxy._service`:
+This was not merely wasted work. `ServiceProxy` documents
+`@cached_property _service` as *the* way to build the proxied service — it
+is how the Faust App is constructed at module level. Racing 16 threads on
+`proxy._service`:
 
 | | trials that built/returned >1 `Service` |
 |---|---|
 | GIL 3.14 | 0/200 |
 | free-threaded 3.14t | **198/200** |
 
-So one thread can `start()` one `Service` instance while another thread
-holds a different instance, and the later `stop()` never reaches the one
-that was started.
+So one thread could `start()` one `Service` instance while another held a
+different instance, and the later `stop()` never reached the one that was
+started.
+
+**Fixed** in `mode/utils/objects.py` with double-checked locking: the
+already-cached lookup stays lock-free (a plain dict hit), and only the miss
+path takes a per-descriptor `RLock` and re-checks after acquiring.
+Contention is therefore limited to first-time initialisation.
 
 Note that stdlib `functools.cached_property` deliberately dropped its lock
 in 3.12 and accepts duplicate computation. That trade-off is fine for a
-pure value cache; it is not fine for a singleton service handle. The fix is
-double-checked locking in `cached_property.__get__` (a per-instance or
-per-descriptor lock), or failing that, making `ServiceProxy._service`
-guard itself.
+pure value cache; it is not fine for a singleton service handle.
 
-### 3. Concurrent first `import mode` can hand back a half-built module — pre-existing, much worse under free threading
+### 3. Concurrent first `import mode` could hand back a half-built module
 
-**Severity: high.** This one breaks the most ordinary thing a user does.
+**Was: high. Pre-existing, but much worse under free threading.** This one
+broke the most ordinary thing a user does.
 
-`mode/__init__.py` uses the Werkzeug lazy-import trick: it defines a
-`_module` subclass with a `__getattr__` that resolves the lazily-exported
-names, then swaps it into `sys.modules` at the *end* of the module body
-(`mode/__init__.py:88-129`):
+`mode/__init__.py` used the Werkzeug lazy-import trick: define a `_module`
+subclass whose `__getattr__` resolves the lazily-exported names, then swap
+it into `sys.modules` at the *end* of the module body.
 
-```python
-new_module = sys.modules[__name__] = _module(__name__)
-new_module.__dict__.update({"__file__": ..., "__path__": ..., ...})
-```
-
-If thread B runs `import mode` while thread A is still executing
-`mode/__init__.py`, B can be handed the original, pre-swap module object —
-which has no `__getattr__` yet — so every lazily-exported name raises:
+If thread B ran `import mode` while thread A was still executing
+`mode/__init__.py`, B could be handed the original, pre-swap module object —
+which has no `__getattr__` — so every lazily-exported name raised:
 
 ```
 AttributeError: module 'mode' has no attribute 'Service'
@@ -160,41 +167,48 @@ Racing 16 threads on a cold `import mode` followed by attribute access:
 | GIL 3.14 | 3/25 |
 | free-threaded 3.14t | **14/25** |
 
-Instrumenting a failing thread confirms the mechanism: the object it
-imported is a plain `module` (`type(mode).__name__ == "module"`) while
-`sys.modules["mode"]` is already the `_module` instance — the thread holds
-the stale pre-swap object. The replacement module also carries **no
-`__spec__`** (`sys.modules["mode"].__spec__ is None`), which is what
-deprives the import machinery of the `_initializing` flag it would
-otherwise use to make the second thread wait.
+Instrumenting a failing thread confirmed the mechanism: the object it
+imported was a plain `module` while `sys.modules["mode"]` was already the
+`_module` instance — the thread held the stale pre-swap object. The
+replacement module also carried **no `__spec__`**, which deprived the import
+machinery of the `_initializing` flag it would otherwise use to make the
+second thread wait.
 
-The fix is to drop the `sys.modules` swap entirely and use a PEP 562
-module-level `__getattr__`, which needs no module replacement and is
-therefore race-free. PEP 562 landed in 3.7 and mode's floor is 3.10, so the
-`_module` class exists only for compatibility that is no longer needed:
+**Fixed** by dropping the `sys.modules` swap entirely in favour of a
+:pep:`562` module-level `__getattr__` (plus a module `__dir__`). PEP 562
+landed in 3.7 and mode's floor is 3.10, so the `_module` class existed only
+for compatibility that is no longer needed. With no swap, the race cannot
+happen — and `sys.modules["mode"]` keeps its real `__spec__`.
 
-```python
-def __getattr__(name: str) -> Any:
-    if name in object_origins:
-        module = __import__(object_origins[name], None, None, [name])
-        return getattr(module, name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-```
+### 4. `Signal` mutated its receiver set during iteration
 
-### 4. `Signal` mutates its receiver set during iteration — pre-existing
+**Was: medium. Pre-existing, not a free-threading regression** — it raised
+`RuntimeError: Set changed size during iteration` in 30/30 trials on *both*
+builds, so `Signal` had never been thread-safe.
 
-**Severity: medium. Not a free-threading regression.**
+`_get_live_receivers` iterated `self._receivers` (a plain `set`) while
+`connect`/`disconnect` added to and discarded from it — and the caller then
+discarded dead refs from the same set using the result.
 
-`_get_live_receivers` iterates `self._receivers` (a plain `set`)
-(`mode/signals.py:157-167`) while `connect`/`disconnect` add and discard on
-it (`mode/signals.py:120`, `:132`). Racing those raises
-`RuntimeError: Set changed size during iteration` in **30/30 trials on both
-builds** — so `Signal` has never been thread-safe. Free threading only
-makes concurrent use likely enough to hit it in practice.
+**Fixed** in `mode/signals.py` by iterating a snapshot.
 
-Fix: iterate a snapshot, e.g. `for href in tuple(r):`.
+The snapshot must be `list(r)`, **not** `tuple(r)`. This is not stylistic:
 
-### 5. The `gevent` extra re-enables the GIL — packaging
+| snapshot of a set being mutated by 4 threads | free-threaded 3.14t |
+|---|---|
+| `tuple(s)` | **8 failures** — `Set changed size during iteration` |
+| `list(s)` | 0 failures |
+| `set(s)` | 0 failures |
+| `s.copy()` | 0 failures |
+| `frozenset(s)` | 0 failures |
+
+`list()`, `set()` and `set.copy()` take the source set's per-object lock for
+the duration of the copy; `tuple()` falls back to the generic iterator
+protocol and does not, so `tuple(r)` raises the very error the snapshot
+exists to prevent. The first attempt at this fix used `tuple(r)` and the
+stress harness caught it.
+
+### Not fixable here: the `gevent` extra re-enables the GIL
 
 | extra | result on `3.14t` |
 |---|---|
@@ -211,40 +225,30 @@ module 'gevent.libev.corecext', which has not declared that it can run
 safely without the GIL.
 ```
 
-This is upstream in gevent, not something `mode` can fix — it should be
-documented as an unsupported combination.
+This is upstream in gevent, not something `mode` can fix. It is flagged in
+`pyproject.toml` next to the extra.
 
-## Suggested order of work
+## CI
 
-1. Fix `LRUCache` (finding 1) — it is an interpreter crash.
-2. Fix `cached_property` (finding 2) — silent correctness bug for
-   `ServiceProxy`, and therefore for faust.
-3. Convert `mode/__init__.py` to a PEP 562 module `__getattr__`
-   (finding 3) — breaks plain `import mode`, and is a real bug under the
-   GIL too.
-4. Snapshot the `Signal` receiver set (finding 4) — cheap, and also
-   pre-existing.
-5. Add `3.14t` to the `tests.yml` matrix. `actions/setup-python` accepts
-   the `3.14t` version string directly.
-6. Add a trove classifier once 1-4 land:
-   `Programming Language :: Python :: Free Threading :: 2 - Beta`
-   (the `Free Threading :: N - ...` classifiers are registered in
-   `trove-classifiers`).
-7. Document `mode[gevent]` as incompatible with free-threaded builds.
+`3.14t` is part of the `tests.yml` matrix, so the suite — including
+`tests/functional/test_thread_safety.py` — runs with the GIL disabled on
+every push. `ruff` and `mypy` both run clean on the free-threaded build.
+
+The package advertises
+`Programming Language :: Python :: Free Threading :: 2 - Beta`.
 
 ### A note on `pytest-run-parallel`
 
 `pytest-run-parallel` installs and runs on `3.14t`, but pointing
 `--parallel-threads` at the existing suite is not useful: it reports ~33
 failures in `tests/functional/utils/test_collections.py` alone that are
-artifacts of tests sharing mutable fixtures and `Mock` objects, not
-mode bugs. For example
-`test_AttributeDictMixin::test_set_get` fails with "DID NOT RAISE
-AttributeError" purely because a sibling thread already set the attribute
-on the shared object.
+artifacts of tests sharing mutable fixtures and `Mock` objects, not mode
+bugs. For example `test_AttributeDictMixin::test_set_get` fails with "DID
+NOT RAISE AttributeError" purely because a sibling thread already set the
+attribute on the shared object.
 
-Use it selectively on purpose-written thread-safety tests rather than
-across the whole suite.
+Use it selectively on purpose-written thread-safety tests rather than across
+the whole suite.
 
 ## Reproducing
 
@@ -252,10 +256,11 @@ across the whole suite.
 uv python install 3.14t
 uv venv --python 3.14t .venv-ft
 VIRTUAL_ENV=.venv-ft uv pip install -e . -r requirements-tests.txt
+.venv-ft/bin/python -m pytest tests/unit tests/functional
 .venv-ft/bin/python tests/freethreading/stress.py
 ```
 
-`tests/freethreading/` is deliberately outside the `testpaths` configured
-in `pyproject.toml`, so the crash reproducers are never collected by a
-normal `pytest` run. Run the same file under a GIL-enabled interpreter to
-see the control numbers.
+`tests/freethreading/` is deliberately outside the `testpaths` configured in
+`pyproject.toml`, so the heavier probabilistic reproducers are never
+collected by a normal `pytest` run. Run the same file under a GIL-enabled
+interpreter to see the control numbers.
