@@ -283,13 +283,22 @@ class Proxy(Generic[T]):
     def _get_class(self) -> type[T]:
         return self._get_current_object().__class__
 
-    @property
-    def __class__(self) -> Any:
-        return self._get_class()
-
-    @__class__.setter
-    def __class__(self, t: type) -> None:
+    def _set_class(self, t: type) -> None:
         raise NotImplementedError()
+
+    # NOTE: Built with `property()` rather than the `@property` /
+    # `@__class__.setter` decorator pair, because that pair *reads* the bare
+    # name `__class__` in the class body -- and here that is not a plain
+    # namespace lookup.  `__init_subclass__` above calls zero-argument
+    # `super()`, which makes the compiler add an implicit `__class__` closure
+    # cell to this class.  CPython still resolves the bare name to the
+    # property object defined moments earlier, but PyPy resolves it to that
+    # cell, which is empty until the class object exists -- so importing this
+    # module raises `NameError: name '__class__' is not defined`.  PyPy only
+    # takes that path with a trace function installed, so it shows up under
+    # coverage and not otherwise.  Storing the name without ever loading it
+    # sidesteps the whole question on every interpreter.
+    __class__: Any = property(_get_class, _set_class)
 
     def _get_current_object(self) -> T:
         """Get current object.
