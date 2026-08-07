@@ -31,10 +31,15 @@ jobs:
         experimental: [ false ]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
             fetch-depth: 0
-      - uses: "actions/setup-python@v4"
+      # setup-python must be >= v5.3: that is the first release that
+      # understands the free-threaded "t" suffix.  On v4, "3.14t" is
+      # looked up as a literal version against arch x64 rather than
+      # x64-freethreaded, and the job fails with "The version '3.14t'
+      # with architecture 'x64' was not found".
+      - uses: "actions/setup-python@v5"
         with:
           python-version: "${{ matrix.python-version }}"
           cache: "pip"
