@@ -226,7 +226,36 @@ safely without the GIL.
 ```
 
 This is upstream in gevent, not something `mode` can fix. It is flagged in
-`pyproject.toml` next to the extra.
+`pyproject.toml` next to the extra, and `mode/loop/gevent.py` now warns at
+import time on a free-threaded build — the degradation is otherwise silent,
+since you keep running and simply are not free-threaded any more. That check
+uses the *build* flag (`sysconfig.get_config_var("Py_GIL_DISABLED")`) rather
+than `sys._is_gil_enabled()`, which by then already reads `True`.
+
+**Separately: `mode.loop.use("gevent")` is currently broken on every build.**
+This has nothing to do with free threading — it fails identically on
+GIL-enabled 3.10 and 3.14 with gevent 26.7.0:
+
+```
+ImportError: Cannot import 'Loop' from <module 'mode.loop._gevent_loop'>
+```
+
+The cause is a self-referential import. `mode/loop/gevent.py` sets
+`GEVENT_LOOP=mode.loop._gevent_loop.Loop`, but `mode/loop/_gevent_loop.py`
+imports `gevent.core` at module scope in order to subclass
+`gevent.core.loop`. Importing it therefore builds a gevent hub, which
+resolves `GEVENT_CONFIG.loop`, which imports `mode.loop._gevent_loop` — a
+module whose body has not yet reached `class Loop`. Pre-importing the module
+does not help, because the cycle is inside its own import.
+
+gevent itself is fine: `gevent.monkey.patch_all()` plus
+`asyncio_gevent.EventLoopPolicy` runs an asyncio coroutine correctly. Only
+mode's custom `GEVENT_LOOP` hook fails. Presumably gevent used to resolve
+that setting lazily and no longer does.
+
+`mode.loop` has no test coverage, which is how this went unnoticed. Fixing
+it means building `Loop` lazily rather than at module scope, and is a
+separate piece of work from anything on this page.
 
 ## CI
 
