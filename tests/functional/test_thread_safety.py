@@ -12,6 +12,7 @@ See `docs/free-threading.md` for the measurements behind each one, and
 import sys
 import threading
 import time
+from collections import OrderedDict
 from types import ModuleType
 
 import pytest
@@ -115,20 +116,28 @@ class test_cached_property_is_computed_once:
 
 
 class test_LRUCache_thread_safety:
-    def test_backed_by_plain_dict(self):
-        # Not an OrderedDict: on free-threaded builds concurrent mutation
-        # of an OrderedDict can corrupt its linked list and segfault the
-        # interpreter, while plain dict has per-object locking.
-        assert type(LRUCache().data) is dict
+    def test_backed_by_ordered_dict(self):
+        # OrderedDict, not plain dict: evicting the oldest entry is the hot
+        # path and OrderedDict does it in O(1), where dict has to scan past
+        # every slot vacated since its last resize.  The concurrency
+        # hazard that comes with it is handled by making the mutex
+        # mandatory on free-threaded builds, not by changing container.
+        assert type(LRUCache().data) is OrderedDict
 
     def test_thread_safety_defaults_to_free_threaded(self):
         assert LRUCache().thread_safety is FREE_THREADED
 
-    @pytest.mark.parametrize("thread_safety", [True, False])
-    def test_thread_safety_can_be_overridden(self, thread_safety):
-        assert LRUCache(thread_safety=thread_safety).thread_safety is (
-            thread_safety
-        )
+    def test_thread_safety_can_be_requested(self):
+        assert LRUCache(thread_safety=True).thread_safety is True
+
+    def test_thread_safety_cannot_be_disabled_when_free_threaded(self):
+        # An unguarded OrderedDict is memory-unsafe here, not merely racy,
+        # so this is refused rather than honoured.
+        if FREE_THREADED:
+            with pytest.raises(ValueError, match="free-threaded"):
+                LRUCache(thread_safety=False)
+        else:
+            assert LRUCache(thread_safety=False).thread_safety is False
 
     def test_popitem_last_is_lifo(self):
         c = LRUCache()
@@ -178,8 +187,9 @@ class test_LRUCache_thread_safety:
         assert c["d"] == 4
 
     def test_concurrent_mutation_and_iteration(self):
-        # Deliberately the *default* configuration: this is what used to
-        # segfault the interpreter on free-threaded builds.
+        # Deliberately the *default* configuration -- which on a
+        # free-threaded build now means the mutex is on.  This is the
+        # workload that used to segfault the interpreter.
         c = LRUCache(limit=50)
         barrier = threading.Barrier(8)
         errors = []

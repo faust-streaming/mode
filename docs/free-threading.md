@@ -88,22 +88,42 @@ Free-threaded CPython gives plain `dict` per-object locking; `OrderedDict`'s
 C implementation did not get the same treatment, so concurrent mutation
 corrupts its internal linked list.
 
-**Fixed** in `mode/utils/collections.py` by all three of:
+**Fixed** in `mode/utils/collections.py` by:
 
-- Backing the cache with a plain `dict`. Insertion order has been
-  guaranteed since 3.7, and the only `OrderedDict`-specific API in use was
-  `popitem(last=...)`, now served by `_popitem_first()` plus
-  `dict.popitem()`.
-- Defaulting `thread_safety` to `True` on free-threaded builds, via the new
-  `mode.utils.collections.FREE_THREADED` flag. It is checked at runtime
-  rather than build time, so `PYTHON_GIL=1` is respected. Passing
-  `thread_safety` explicitly still wins.
+- Making the mutex mandatory on free-threaded builds. `thread_safety`
+  defaults to the new `mode.utils.collections.FREE_THREADED` flag, checked
+  at runtime rather than build time so `PYTHON_GIL=1` is respected, and
+  passing `thread_safety=False` on such a build now raises `ValueError`
+  rather than handing back a structure that can take the interpreter down.
 - Snapshotting in `_keys`/`_values`/`_items` instead of holding the mutex
   across `yield`. The old code kept the lock held for as long as the
   *consumer* took to iterate — and forever if the consumer abandoned the
   generator, since the lock was only released when the generator was
   closed. That hazard was latent while the lock defaulted to off; turning
   the lock on by default would have made it real.
+
+### Why not just swap `OrderedDict` for `dict`?
+
+That was the first fix, and it was wrong. `dict` has preserved insertion
+order since 3.7 and is memory-safe under free threading, so it looks like a
+free win — but `LRUCache`'s hot path is evicting the *oldest* entry, and
+that is the one thing `dict` cannot do in O(1). `OrderedDict.popitem(last=
+False)` unlinks a node; the `dict` equivalent, `d.pop(next(iter(d)))`, has
+to scan past every slot vacated since the last resize.
+
+Steady-state evict-and-insert, 100k operations:
+
+| cache size | `OrderedDict` | `dict` |
+|---|---|---|
+| 1,000 | 0.043s | 0.089s |
+| 10,000 | 0.046s | 0.448s |
+| 100,000 | 0.052s | 2.447s |
+
+The gap grows linearly with the cache, because the eviction itself became
+O(n). Periodically rebuilding the dict to compact it only softens this to
+O(√n) — still ~24x at 100k — so there is no cheap repair. `OrderedDict` is
+the right data structure here; the concurrency hazard belongs to the mutex,
+not to the choice of container.
 
 `LRUCache` is not used inside `mode` itself; it is exported utility surface
 (faust is a consumer), so the blast radius was downstream.
