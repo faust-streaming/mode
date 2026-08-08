@@ -68,15 +68,17 @@ def report(name, errors, note=""):
 
 
 # --------------------------------------------------------------------------
-# Defect 1 (fixed): LRUCache was backed by OrderedDict with
-# thread_safety=False by default, so concurrent mutate+iterate segfaulted a
-# free-threaded interpreter.  It is a plain dict now, and thread_safety
-# defaults to on for free-threaded builds.
+# Defect 1 (fixed): LRUCache is backed by OrderedDict, whose C linked list
+# concurrent mutation can corrupt badly enough to segfault a free-threaded
+# interpreter -- and thread_safety defaulted to False.  The container is
+# unchanged (dict cannot evict the oldest entry in O(1)); instead the mutex
+# is now mandatory on free-threaded builds, so the default config is safe
+# and thread_safety=False is refused there.
 # --------------------------------------------------------------------------
 def check_lru_default(trials=60):
     from mode.utils.collections import LRUCache
 
-    print("  (this check segfaulted before the fix)", flush=True)
+    print("  (this configuration segfaulted before the fix)", flush=True)
     bad = 0
     for _ in range(trials):
         cache = LRUCache(limit=50)
