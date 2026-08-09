@@ -22,6 +22,46 @@ from .utils.futures import maybe_async
 __all__ = ["BaseSignal", "Signal", "SyncSignal"]
 
 
+class _StrongRef:
+    """Reference to a receiver connected with ``weak=False``.
+
+    Mirrors the `weakref.ref` interface used for weak receivers -- calling
+    it returns the handler -- but keeps the handler alive and, crucially,
+    compares equal to any other reference wrapping the same handler.
+
+    That equality is what makes `disconnect` work.  Strong receivers used
+    to be stored as ``lambda: fun``, and `disconnect` built a *second*
+    lambda to look up; two lambdas are never equal, so the `discard` never
+    matched and the receiver stayed connected forever.
+    """
+
+    __slots__ = ("fun",)
+
+    def __init__(self, fun: SignalHandlerT) -> None:
+        self.fun = fun
+
+    def __call__(self) -> SignalHandlerT:
+        return self.fun
+
+    def __hash__(self) -> int:
+        try:
+            return hash(self.fun)
+        except TypeError:
+            # A handler that defines __eq__ without __hash__ cannot be
+            # looked up by equality anyway.  Falling back to identity
+            # keeps connect() working for it, exactly as the old lambda
+            # did.
+            return id(self.fun)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, _StrongRef):
+            return bool(self.fun == other.fun)
+        return NotImplemented
+
+    def __repr__(self) -> str:
+        return f"<{type(self).__name__}: {self.fun!r}>"
+
+
 class BaseSignal(BaseSignalT[T]):
     """Base class for signal/observer pattern."""
 
@@ -113,7 +153,7 @@ class BaseSignal(BaseSignalT[T]):
         self, fun: SignalHandlerT, *, weak: bool = False, sender: Any = None
     ) -> SignalHandlerT:
         ref: SignalHandlerRefT
-        ref = self._create_ref(fun) if weak else lambda: fun
+        ref = self._create_ref(fun) if weak else _StrongRef(fun)
         if self.default_sender is not None:
             sender = self.default_sender
         if sender is None:
@@ -125,14 +165,21 @@ class BaseSignal(BaseSignalT[T]):
     def disconnect(
         self, fun: SignalHandlerT, *, weak: bool = False, sender: Any = None
     ) -> None:
-        ref: SignalHandlerRefT = self._create_ref(fun) if weak else lambda: fun
+        ref: SignalHandlerRefT
+        ref = self._create_ref(fun) if weak else _StrongRef(fun)
         if self.default_sender is not None:
             sender = self.default_sender
         if sender is None:
             self._receivers.discard(ref)
         else:
             try:
-                self._filter_receivers[self._create_id(sender)].remove(ref)
+                # `discard`, not `remove`: disconnecting a receiver that
+                # was never connected for this sender is not an error, and
+                # `set.remove` signals it with KeyError -- which the
+                # `except ValueError` below never caught.  That clause is
+                # for `_create_id`, whose hash() of the sender is what can
+                # raise here.
+                self._filter_receivers[self._create_id(sender)].discard(ref)
             except ValueError:
                 pass
 
@@ -186,8 +233,8 @@ class BaseSignal(BaseSignalT[T]):
             value = ref()
             return value is not None, value
         # Receivers connected with ``weak=False`` are stored as a
-        # zero-argument callable returning the handler (see ``_connect``),
-        # and are always alive.
+        # ``_StrongRef``: a zero-argument callable returning the handler
+        # (see ``_connect``), which keeps it alive by construction.
         deref = cast(Callable[[], SignalHandlerT], ref)
         return True, deref()
 

@@ -117,6 +117,44 @@ def check_lru_thread_safe(trials=20):
     )
 
 
+def check_lru_mapping_surface(trials=40):
+    # The checks above only drive the methods LRUCache defines itself.
+    # Every other mapping operation used to be inherited from FastUserDict,
+    # which reaches self.data with the mutex released -- so `del`, `clear`,
+    # `copy`, `len`, `in` and `repr` had the same unguarded OrderedDict
+    # access that the segfault came from.  Race them against writers.
+    from mode.utils.collections import LRUCache
+
+    bad = 0
+    for _ in range(trials):
+        cache = LRUCache(limit=50)
+
+        def work(i, cache=cache):
+            for n in range(100):
+                key = f"{i}-{n}"
+                cache[key] = n
+                len(cache)
+                key in cache  # noqa: B015
+                repr(cache)
+                cache.copy()
+                cache.get(key)
+                cache.setdefault(f"sd-{i}", n)
+                cache.pop(key, None)
+                try:
+                    del cache[f"{i}-{n - 1}"]
+                except KeyError:
+                    pass
+                if not n % 25:
+                    cache.clear()
+
+        if race(work):
+            bad += 1
+    print(
+        f"[{'FAIL' if bad else 'ok  '}] LRUCache(mapping surface): "
+        f"{bad}/{trials} trials raised"
+    )
+
+
 # --------------------------------------------------------------------------
 # Defect 2 (fixed): cached_property.__get__ was a non-atomic check-then-act
 # on obj.__dict__, so racing threads each computed and handed out a distinct
@@ -196,11 +234,18 @@ def check_service_proxy(trials=200):
 # Defect 4 (fixed): Signal iterated its receiver set while connect/disconnect
 # mutated it.  Pre-existing -- this failed on GIL builds too.  It snapshots
 # with list() now (NOT tuple(), which does not lock the source set).
+#
+# The disconnect half of that race only became real once strong receivers
+# were stored as _StrongRef: they used to be `lambda: fun`, and disconnect
+# built a second lambda that could never compare equal, so the receiver set
+# grew monotonically and was never actually mutated by disconnect().  The
+# leftover count below is asserted, not just the absence of exceptions.
 # --------------------------------------------------------------------------
 def check_signal(trials=30):
     from mode.signals import Signal
 
     bad = 0
+    leaked = 0
     for _ in range(trials):
 
         class Owner:
@@ -223,9 +268,12 @@ def check_signal(trials=30):
 
         if race(work):
             bad += 1
+        if sig._receivers:
+            leaked += 1
     print(
-        f"[{'FAIL' if bad else 'ok  '}] Signal iter_receivers: "
-        f"{bad}/{trials} trials raised"
+        f"[{'FAIL' if bad or leaked else 'ok  '}] Signal iter_receivers: "
+        f"{bad}/{trials} trials raised, "
+        f"{leaked}/{trials} left receivers connected"
     )
 
 
@@ -422,6 +470,7 @@ def main():
     check_cached_property()
     check_service_proxy()
     check_lru_default()
+    check_lru_mapping_surface()
 
 
 if __name__ == "__main__":
