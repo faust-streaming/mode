@@ -5,7 +5,7 @@ from weakref import ref
 import pytest
 
 from mode import label
-from mode.signals import Signal, SignalT, SyncSignal, SyncSignalT
+from mode.signals import Signal, SignalT, SyncSignal, SyncSignalT, _StrongRef
 
 
 class X:
@@ -239,3 +239,154 @@ class test_BaseSignal:
 
         assert sig._create_ref(X.foo)
         assert sig._create_ref(X().foo)
+
+
+class test_disconnect_removes_the_receiver:
+    """`disconnect` has to undo `connect`, strong references included.
+
+    Strong receivers used to be stored as ``lambda: fun``, and
+    `disconnect` built a *second* lambda to look up.  Two lambdas never
+    compare equal, so the `discard` matched nothing and the handler stayed
+    connected -- and stayed subscribed to every subsequent send.
+    """
+
+    @pytest.fixture
+    def handler(self):
+        async def handler(*args: Any, **kwargs: Any) -> None: ...
+
+        return handler
+
+    def test_strong_receiver(self, handler):
+        sig = Signal()
+        sig.connect(handler)
+        assert len(sig._receivers) == 1
+
+        sig.disconnect(handler)
+        assert not sig._receivers
+
+    def test_weak_receiver(self, handler):
+        sig = Signal()
+        sig.connect(handler, weak=True)
+        assert len(sig._receivers) == 1
+
+        sig.disconnect(handler, weak=True)
+        assert not sig._receivers
+
+    def test_strong_bound_method(self):
+        class Owner:
+            async def handler(self, *args: Any, **kwargs: Any) -> None: ...
+
+        owner = Owner()
+        sig = Signal()
+        # `owner.handler` is a fresh bound method object on every attribute
+        # access, so this only works if equality is what decides, not
+        # identity.
+        sig.connect(owner.handler)
+        sig.disconnect(owner.handler)
+        assert not sig._receivers
+
+    def test_connect_is_still_idempotent(self, handler):
+        sig = Signal()
+        sig.connect(handler)
+        sig.connect(handler)
+        assert len(sig._receivers) == 1
+
+    def test_only_the_named_receiver_is_removed(self, handler):
+        async def other(*args: Any, **kwargs: Any) -> None: ...
+
+        sig = Signal()
+        sig.connect(handler)
+        sig.connect(other)
+
+        sig.disconnect(handler)
+        assert {r() for r in sig._receivers} == {other}
+
+    def test_disconnected_receiver_stops_being_iterated(self, handler):
+        sender = object()
+        sig = Signal()
+        sig.connect(handler)
+        assert list(sig.iter_receivers(sender)) == [handler]
+
+        sig.disconnect(handler)
+        assert list(sig.iter_receivers(sender)) == []
+
+    def test_sender_specific_receiver(self, handler):
+        sender = object()
+        sig = Signal()
+        sig.connect(handler, sender=sender)
+        assert sig._filter_receivers[sig._create_id(sender)]
+
+        sig.disconnect(handler, sender=sender)
+        assert not sig._filter_receivers[sig._create_id(sender)]
+
+    def test_sender_specific_disconnect_of_unknown_receiver(self, handler):
+        # `set.remove` raised KeyError here, which the `except ValueError`
+        # around it never caught.
+        sig = Signal()
+        sig.connect(handler, sender=object())
+        sig.disconnect(handler, sender=object())
+
+    def test_disconnect_of_never_connected_receiver(self, handler):
+        sig = Signal()
+        sig.disconnect(handler)
+        sig.disconnect(handler, sender=object())
+
+    def test_default_sender_disconnect(self, handler):
+        x = X()
+        x.on_started.connect(handler)
+        assert x.on_started._filter_receivers[x.on_started._create_id(x)]
+
+        x.on_started.disconnect(handler)
+        assert not x.on_started._filter_receivers[x.on_started._create_id(x)]
+
+
+class test_StrongRef:
+    def test_calling_it_returns_the_handler(self):
+        def fun(): ...
+
+        assert _StrongRef(fun)() is fun
+
+    def test_equal_and_hashes_alike_for_the_same_handler(self):
+        def fun(): ...
+
+        assert _StrongRef(fun) == _StrongRef(fun)
+        assert hash(_StrongRef(fun)) == hash(_StrongRef(fun))
+        assert len({_StrongRef(fun), _StrongRef(fun)}) == 1
+
+    def test_differs_from_a_ref_to_another_handler(self):
+        def fun(): ...
+
+        def other(): ...
+
+        assert _StrongRef(fun) != _StrongRef(other)
+
+    def test_never_equal_to_a_plain_callable(self):
+        # Weak receivers live in the same set, so comparisons against
+        # something that is not a _StrongRef have to defer rather than
+        # claim equality.
+        def fun(): ...
+
+        assert _StrongRef(fun).__eq__(fun) is NotImplemented
+        assert _StrongRef(fun) != fun
+
+    def test_unhashable_handler_falls_back_to_identity(self):
+        class Unhashable:
+            __hash__ = None  # type: ignore[assignment]
+
+            def __call__(self): ...
+
+        fun = Unhashable()
+        with pytest.raises(TypeError):
+            hash(fun)
+        # The old `lambda: fun` hashed by identity, so connecting one of
+        # these has to keep working.
+        assert hash(_StrongRef(fun)) == id(fun)
+
+        sig = Signal()
+        sig.connect(fun)
+        assert len(sig._receivers) == 1
+
+    def test_repr_names_the_handler(self):
+        def fun(): ...
+
+        assert "fun" in repr(_StrongRef(fun))

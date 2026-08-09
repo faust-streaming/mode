@@ -88,6 +88,9 @@ _ComparableT = TypeVar("_ComparableT", bound="SupportsRichComparison")
 
 _Setlike = Union[Set[T], Iterable[T]]
 
+#: Sentinel for "no default given", so that `None` stays a usable default.
+_MISSING: Any = object()
+
 
 class Heap(MutableSequence[_ComparableT]):
     """Generic interface to `heapq`.
@@ -579,6 +582,87 @@ class LRUCache(FastUserDict, MutableMapping[KT, VT], MappingViewProxy):
             self[key] = cast(VT, str(newval))
             return newval
 
+    # NOTE: Everything below re-implements an inherited method that would
+    # otherwise reach `self.data` with the mutex released.  On a
+    # free-threaded build that is not merely a stale answer: touching the
+    # backing OrderedDict while another thread mutates it can corrupt its
+    # linked list badly enough to take the interpreter down, and a
+    # read-only operation such as `len` or `in` is just as capable of
+    # observing the half-updated state as a write is.  Anything added to
+    # `FastUserDict` that uses `self.data` directly needs an override here
+    # too.
+
+    def __delitem__(self, key: KT) -> None:
+        with self._mutex:
+            del self.data[key]
+
+    def __len__(self) -> int:
+        with self._mutex:
+            return len(self.data)
+
+    def __contains__(self, key: object) -> bool:
+        with self._mutex:
+            return key in self.data
+
+    def __repr__(self) -> str:
+        with self._mutex:
+            return repr(self.data)
+
+    def copy(self) -> dict:
+        with self._mutex:
+            return dict(self.data)
+
+    def clear(self) -> None:
+        with self._mutex:
+            self.data.clear()
+
+    # The compound `MutableMapping` helpers below are inherited as
+    # combinations of the primitives above.  Each primitive is locked, so
+    # inheriting them would already be memory-safe, but the lock is
+    # dropped between the lookup and the store -- which for a class that
+    # advertises thread safety is a surprising place to lose an
+    # invariant.  They are made atomic instead.
+
+    @overload
+    def pop(self, key: KT) -> VT: ...
+
+    @overload
+    def pop(self, key: KT, default: Union[VT, T]) -> Union[VT, T]: ...
+
+    def pop(self, key: KT, default: Any = _MISSING) -> Any:
+        with self._mutex:
+            try:
+                return cast(VT, self.data.pop(key))
+            except KeyError:
+                if default is _MISSING:
+                    raise
+                return default
+
+    # NOTE: Not overloaded like `pop` and `get` above.  `LRUCache` lists
+    # `FastUserDict` unparameterized among its bases, so the inherited
+    # `setdefault` erases to `(Any, None = ...) -> Any | None`, and a
+    # narrower `(KT, VT) -> VT` pair here is an incompatible override.
+    def setdefault(self, key: KT, default: Any = None) -> Any:
+        with self._mutex:
+            try:
+                return self[key]
+            except KeyError:
+                self[key] = cast(VT, default)
+                return default
+
+    @overload
+    def get(self, key: KT) -> Optional[VT]: ...
+
+    @overload
+    def get(self, key: KT, default: Union[VT, T]) -> Union[VT, T]: ...
+
+    def get(self, key: KT, default: Any = None) -> Any:
+        with self._mutex:
+            try:
+                return self[key]
+            except KeyError:
+                return default
+
     def _new_lock(self) -> AbstractContextManager:
         if self.thread_safety:
             return cast(AbstractContextManager, threading.RLock())
@@ -590,6 +674,16 @@ class LRUCache(FastUserDict, MutableMapping[KT, VT], MappingViewProxy):
         return d
 
     def __setstate__(self, state: dict[str, Any]) -> None:
+        # Unpickling is another way to construct the object, so it has to
+        # honour the same invariant `__init__` does: no unguarded
+        # OrderedDict on a free-threaded build.  Pickles written by an
+        # older version -- or on a GIL build, where thread_safety=False is
+        # both the default and legal -- would otherwise come back here
+        # with `nullcontext` for a mutex.  Upgrading the flag keeps those
+        # pickles loadable, which raising would not.
+        state = dict(state)
+        if FREE_THREADED and not state.get("thread_safety", False):
+            state["thread_safety"] = True
         self.__dict__ = state
         self._mutex = self._new_lock()
 

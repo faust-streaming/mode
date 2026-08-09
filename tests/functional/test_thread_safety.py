@@ -9,10 +9,12 @@ See `docs/free-threading.md` for the measurements behind each one, and
 `tests/freethreading/stress.py` for the heavier probabilistic reproducers.
 """
 
+import pickle
 import sys
 import threading
 import time
 from collections import OrderedDict
+from contextlib import nullcontext
 from types import ModuleType
 
 import pytest
@@ -213,6 +215,225 @@ class test_LRUCache_thread_safety:
 
         assert not errors
 
+    def test_concurrent_mapping_surface(self):
+        # The test above only drives the methods LRUCache defines itself.
+        # Every other mapping operation used to be inherited straight from
+        # FastUserDict, reaching self.data with the mutex released.
+        c = LRUCache(limit=50)
+        barrier = threading.Barrier(8)
+        errors = []
+
+        def work(i):
+            barrier.wait()
+            try:
+                for n in range(200):
+                    key = f"{i}-{n}"
+                    c[key] = n
+                    len(c)
+                    key in c  # noqa: B015
+                    repr(c)
+                    c.copy()
+                    c.get(key)
+                    c.setdefault(f"sd-{i}", n)
+                    c.pop(key, None)
+                    if not n % 50:
+                        c.clear()
+            except BaseException as exc:  # pragma: no cover
+                errors.append(exc)
+
+        threads = [threading.Thread(target=work, args=(i,)) for i in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors
+
+
+class test_LRUCache_takes_the_mutex:
+    """Every operation reaching ``data`` must go through ``_mutex``.
+
+    `LRUCache` inherits most of its mapping surface from `FastUserDict`,
+    whose implementations use ``self.data`` directly.  An override that
+    goes missing is invisible to a stress test -- it just makes the race
+    window smaller -- so assert lock entry directly instead.
+    """
+
+    class TrackingMutex:
+        def __init__(self) -> None:
+            self.enters = 0
+
+        def __enter__(self) -> None:
+            self.enters += 1
+
+        def __exit__(self, *exc_info: object) -> None:
+            pass
+
+    def assert_takes_mutex(self, operation):
+        cache = LRUCache(limit=10, thread_safety=True)
+        # Populate without going through the (locked) __setitem__, so the
+        # count below only reflects the operation under test.
+        cache.data["a"] = 1
+        cache.data["b"] = 2
+        mutex = self.TrackingMutex()
+        cache._mutex = mutex
+
+        operation(cache)
+
+        assert mutex.enters, "operation reached .data without the mutex"
+
+    @pytest.mark.parametrize(
+        "name,operation",
+        [
+            ("__setitem__", lambda c: c.__setitem__("c", 3)),
+            ("__getitem__", lambda c: c["a"]),
+            ("__delitem__", lambda c: c.__delitem__("a")),
+            ("__len__", len),
+            ("__contains__", lambda c: "a" in c),
+            ("__repr__", repr),
+            ("__iter__", lambda c: list(iter(c))),
+            ("keys", lambda c: list(c.keys())),
+            ("values", lambda c: list(c.values())),
+            ("items", lambda c: list(c.items())),
+            ("copy", lambda c: c.copy()),
+            ("clear", lambda c: c.clear()),
+            ("update", lambda c: c.update({"c": 3})),
+            ("popitem", lambda c: c.popitem()),
+            ("pop", lambda c: c.pop("a")),
+            ("pop-default", lambda c: c.pop("missing", None)),
+            ("setdefault-hit", lambda c: c.setdefault("a", 0)),
+            ("setdefault-miss", lambda c: c.setdefault("z", 0)),
+            ("get-hit", lambda c: c.get("a")),
+            ("get-miss", lambda c: c.get("missing")),
+            ("incr", lambda c: c.incr("a")),
+        ],
+    )
+    def test_operation_takes_mutex(self, name, operation):
+        self.assert_takes_mutex(operation)
+
+
+class test_LRUCache_mapping_semantics:
+    """The mutex overrides must not change what the methods do."""
+
+    def test_pop_returns_and_removes(self):
+        c = LRUCache()
+        c.update({"a": 1, "b": 2})
+        assert c.pop("a") == 1
+        assert "a" not in c
+        assert len(c) == 1
+
+    def test_pop_missing_raises_KeyError(self):
+        with pytest.raises(KeyError):
+            LRUCache().pop("a")
+
+    def test_pop_missing_returns_default(self):
+        assert LRUCache().pop("a", "default") == "default"
+        # None has to stay usable as a default, so the "no default given"
+        # sentinel cannot be None.
+        assert LRUCache().pop("a", None) is None
+
+    def test_setdefault_stores_and_returns(self):
+        c = LRUCache()
+        assert c.setdefault("a", 1) == 1
+        assert c.setdefault("a", 2) == 1
+        assert c["a"] == 1
+
+    def test_get(self):
+        c = LRUCache()
+        c["a"] = 1
+        assert c.get("a") == 1
+        assert c.get("b") is None
+        assert c.get("b", "default") == "default"
+
+    def test_len_contains_and_repr(self):
+        c = LRUCache()
+        c.update({"a": 1})
+        assert len(c) == 1
+        assert "a" in c
+        assert "b" not in c
+        assert repr(c) == repr(c.data)
+
+    def test_copy_is_a_plain_dict_snapshot(self):
+        c = LRUCache()
+        c.update({"a": 1})
+        copy = c.copy()
+        assert copy == {"a": 1}
+        assert type(copy) is dict
+        c["b"] = 2
+        assert copy == {"a": 1}
+
+    def test_del_and_clear(self):
+        c = LRUCache()
+        c.update({"a": 1, "b": 2})
+        del c["a"]
+        assert list(c.keys()) == ["b"]
+        c.clear()
+        assert not len(c)
+        with pytest.raises(KeyError):
+            del c["a"]
+
+    def test_pop_does_not_reinsert_the_key(self):
+        # __getitem__ pops and reinserts to mark the key most recently
+        # used; pop() must not leave it behind while doing that.
+        c = LRUCache(limit=3)
+        c.update({"a": 1, "b": 2, "c": 3})
+        assert c.pop("a") == 1
+        assert list(c.keys()) == ["b", "c"]
+
+
+class test_LRUCache_pickle:
+    def test_roundtrip_keeps_data_and_limit(self):
+        c = LRUCache(limit=3)
+        c.update({"a": 1, "b": 2})
+        restored = pickle.loads(pickle.dumps(c))
+        assert restored.limit == 3
+        assert list(restored.items()) == [("a", 1), ("b", 2)]
+        assert restored.thread_safety is c.thread_safety
+
+    def test_restored_cache_is_usable(self):
+        restored = pickle.loads(pickle.dumps(LRUCache(limit=2)))
+        restored["a"] = 1
+        restored["b"] = 2
+        restored["c"] = 3
+        assert list(restored.keys()) == ["b", "c"]
+
+    def test_unsafe_pickle_is_upgraded_when_free_threaded(self, monkeypatch):
+        # Unpickling is another construction path, so it has to honour the
+        # invariant __init__ enforces.  A pickle written on a GIL build --
+        # where thread_safety=False is both legal and the default -- used
+        # to restore a free-threaded cache with a nullcontext for a mutex.
+        monkeypatch.setattr("mode.utils.collections.FREE_THREADED", False)
+        payload = pickle.dumps(LRUCache(thread_safety=False))
+
+        monkeypatch.setattr("mode.utils.collections.FREE_THREADED", True)
+        restored = pickle.loads(payload)
+
+        assert restored.thread_safety is True
+        assert not isinstance(restored._mutex, nullcontext)
+
+    def test_unsafe_pickle_is_left_alone_with_the_gil(self, monkeypatch):
+        monkeypatch.setattr("mode.utils.collections.FREE_THREADED", False)
+        restored = pickle.loads(pickle.dumps(LRUCache(thread_safety=False)))
+
+        assert restored.thread_safety is False
+        assert isinstance(restored._mutex, nullcontext)
+
+    def test_setstate_preserves_true_thread_safety(self, monkeypatch):
+        monkeypatch.setattr("mode.utils.collections.FREE_THREADED", True)
+        restored = pickle.loads(pickle.dumps(LRUCache(thread_safety=True)))
+
+        assert restored.thread_safety is True
+        assert not isinstance(restored._mutex, nullcontext)
+
+    def test_setstate_does_not_mutate_the_state_it_is_given(self, monkeypatch):
+        monkeypatch.setattr("mode.utils.collections.FREE_THREADED", True)
+        state = {"limit": None, "thread_safety": False, "data": OrderedDict()}
+        cache = LRUCache.__new__(LRUCache)
+        cache.__setstate__(state)
+
+        assert cache.thread_safety is True
+        assert state["thread_safety"] is False
+
 
 class test_Signal_receiver_iteration:
     def test_get_live_receivers_tolerates_mutation(self):
@@ -268,6 +489,11 @@ class test_Signal_receiver_iteration:
             t.join()
 
         assert not errors
+        # Every connect above was paired with a disconnect, so the set has
+        # to be empty.  Without this the test proved much less than it
+        # looked like it did: disconnect() was a no-op for strong
+        # receivers, so the "mutation" being raced was only ever growth.
+        assert not signal._receivers
 
 
 class test_mode_lazy_imports:
