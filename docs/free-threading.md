@@ -101,6 +101,25 @@ corrupts its internal linked list.
   generator, since the lock was only released when the generator was
   closed. That hazard was latent while the lock defaulted to off; turning
   the lock on by default would have made it real.
+- Taking the mutex in *every* operation that reaches `data`, not just the
+  ones `LRUCache` already defined. `LRUCache` inherits from `FastUserDict`,
+  whose methods use `self.data` directly, so `del cache[k]`, `clear()`,
+  `copy()`, `len(cache)`, `k in cache` and `repr(cache)` all reached the
+  `OrderedDict` with the mutex released — the same unguarded access the
+  segfault came from, through the ordinary mapping API. Read-only
+  operations are no safer here than writes: a `len()` racing an eviction
+  reads a linked list mid-relink. `pop`, `setdefault` and `get` are
+  overridden as well; the primitives they are inherited as were each
+  locked, but the lock was dropped between the lookup and the store, which
+  is a surprising place for a class advertising thread safety to lose an
+  invariant.
+- Enforcing the same invariant when unpickling. `__setstate__` is a second
+  construction path, and it restored the pickled state verbatim — so a
+  cache pickled on a GIL build (where `thread_safety=False` is both legal
+  and the historical default) came back on a free-threaded interpreter
+  with a `nullcontext` for a mutex, exactly the configuration `__init__`
+  refuses. It now upgrades `thread_safety` to `True` instead, which keeps
+  old pickles loadable where raising would not.
 
 ### Why not just swap `OrderedDict` for `dict`?
 
@@ -227,6 +246,25 @@ the duration of the copy; `tuple()` falls back to the generic iterator
 protocol and does not, so `tuple(r)` raises the very error the snapshot
 exists to prevent. The first attempt at this fix used `tuple(r)` and the
 stress harness caught it.
+
+Half of that race turned out to be unreachable, which made the fix look
+better tested than it was. `disconnect(fun)` never removed a receiver
+connected with the default `weak=False`: `connect` stored `lambda: fun` and
+`disconnect` built a *second* lambda to look it up, and two lambdas never
+compare equal, so the `discard` matched nothing. The receiver set only ever
+grew, and the "connect/disconnect churn" being raced was churn in one
+direction. Sender-specific disconnects were worse than a no-op — they used
+`set.remove`, which raises `KeyError` for a receiver that is not there,
+under an `except ValueError` that could not catch it.
+
+**Also fixed** in `mode/signals.py` by storing strong receivers as a
+`_StrongRef` — a zero-argument callable, like `weakref.ref`, but one whose
+`__eq__`/`__hash__` are those of the wrapped handler, so a reference built
+during `disconnect` matches the one stored by `connect`. Bound methods work
+because equality decides rather than identity: `owner.handler` is a fresh
+object on every attribute access. The sender-specific path uses `discard`
+now, and the concurrency test asserts the receiver set is *empty* at the
+end rather than only that nothing raised.
 
 ### Not fixable here: the `gevent` extra re-enables the GIL
 
