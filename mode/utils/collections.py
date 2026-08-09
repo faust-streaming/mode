@@ -520,7 +520,17 @@ class LRUCache(FastUserDict, MutableMapping[KT, VT], MappingViewProxy):
     def __setitem__(self, key: KT, value: VT) -> None:
         # remove least recently used key.
         with self._mutex:
-            if self.limit and len(self.data) >= self.limit:
+            # NOTE: `key not in self.data` matters.  Updating a key that is
+            # already present does not grow the cache, so evicting to make
+            # room for it discards an unrelated entry for nothing -- a full
+            # cache would shrink below its own limit on every such update
+            # (limit=3 holding a/b/c, then `cache["c"] = ...`, used to leave
+            # two entries and drop "a").
+            if (
+                key not in self.data
+                and self.limit
+                and len(self.data) >= self.limit
+            ):
                 self.data.pop(next(iter(self.data)))
             self.data[key] = value
 
