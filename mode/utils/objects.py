@@ -18,7 +18,7 @@ from collections.abc import (
 from contextlib import suppress
 from decimal import Decimal
 from functools import total_ordering
-from inspect import get_annotations
+from inspect import get_annotations, signature
 from pathlib import Path
 from typing import (
     Any,
@@ -34,11 +34,42 @@ from typing import (
 )
 
 try:
-    from typing import _eval_type  # type: ignore
-except ImportError:
+    from typing import _eval_type as _typing_eval_type  # type: ignore
+except ImportError:  # pragma: no cover
+    _typing_eval_type = None
+    _EVAL_TYPE_WANTS_TYPE_PARAMS = False
+else:
+    # `type_params` (the PEP 695 type parameters in scope) was added to
+    # `typing._eval_type` in 3.13, where omitting it only emitted a
+    # DeprecationWarning and defaulted to `()`.  On 3.15 it became a required
+    # positional argument, so calling without it now fails outright with
+    # "TypeError: _eval_type() missing 1 required positional argument:
+    # 'type_params'".
+    #
+    # The signature is inspected once, here at import.  A try/except TypeError
+    # around the call would be wrong: `_eval_type` legitimately raises
+    # TypeError for annotations `typing._type_check` rejects, and `eval_type`
+    # below depends on being able to tell those apart.
+    _EVAL_TYPE_WANTS_TYPE_PARAMS = (
+        "type_params" in signature(_typing_eval_type).parameters
+    )
 
-    def _eval_type(t, globalns, localns, recursive_guard=frozenset()):  # type: ignore
+
+def _eval_type(
+    t: Any,
+    globalns: Optional[dict[str, Any]],
+    localns: Optional[dict[str, Any]],
+) -> Any:
+    # Nothing resolved through here carries PEP 695 type parameters of its
+    # own, so `()` is both what 3.13/3.14 already substituted when the
+    # argument was omitted and what 3.15 requires -- passing it explicitly
+    # keeps behaviour identical across versions, and silences the 3.13/3.14
+    # deprecation warning on the way.
+    if _typing_eval_type is None:  # pragma: no cover
         return t
+    if _EVAL_TYPE_WANTS_TYPE_PARAMS:
+        return _typing_eval_type(t, globalns, localns, ())
+    return _typing_eval_type(t, globalns, localns)
 
 
 def _is_class_var(typ: Any) -> bool:
