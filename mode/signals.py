@@ -113,7 +113,14 @@ class BaseSignal(BaseSignalT[T]):
         self, fun: SignalHandlerT, *, weak: bool = False, sender: Any = None
     ) -> SignalHandlerT:
         ref: SignalHandlerRefT
-        ref = self._create_ref(fun) if weak else lambda: fun
+        # NOTE: A strong receiver is stored as the handler itself,
+        # unwrapped.  Handlers already hash and compare the way
+        # `disconnect` needs (functions by identity, bound methods by
+        # ``(__func__, __self__)``), and keeping Python-level
+        # __hash__/__eq__ out of the receiver set keeps `set.add` and
+        # `set.discard` atomic -- a wrapper re-entering the interpreter
+        # mid-operation reliably wedged PyPy; see docs/free-threading.md.
+        ref = self._create_ref(fun) if weak else fun
         if self.default_sender is not None:
             sender = self.default_sender
         if sender is None:
@@ -125,14 +132,25 @@ class BaseSignal(BaseSignalT[T]):
     def disconnect(
         self, fun: SignalHandlerT, *, weak: bool = False, sender: Any = None
     ) -> None:
-        ref: SignalHandlerRefT = self._create_ref(fun) if weak else lambda: fun
+        ref: SignalHandlerRefT
+        # Mirrors `_connect`: a strong receiver is the handler itself, so
+        # the value built here compares equal to the stored entry.  (It
+        # was once a fresh ``lambda: fun``, which never matched -- making
+        # disconnect a silent no-op for strong receivers.)
+        ref = self._create_ref(fun) if weak else fun
         if self.default_sender is not None:
             sender = self.default_sender
         if sender is None:
             self._receivers.discard(ref)
         else:
             try:
-                self._filter_receivers[self._create_id(sender)].remove(ref)
+                # `discard`, not `remove`: disconnecting a receiver that
+                # was never connected for this sender is not an error, and
+                # `set.remove` signals it with KeyError -- which the
+                # `except ValueError` below never caught.  That clause is
+                # for `_create_id`, whose hash() of the sender is what can
+                # raise here.
+                self._filter_receivers[self._create_id(sender)].discard(ref)
             except ValueError:
                 pass
 
@@ -185,11 +203,10 @@ class BaseSignal(BaseSignalT[T]):
         if isinstance(ref, ReferenceType):
             value = ref()
             return value is not None, value
-        # Receivers connected with ``weak=False`` are stored as a
-        # zero-argument callable returning the handler (see ``_connect``),
-        # and are always alive.
-        deref = cast(Callable[[], SignalHandlerT], ref)
-        return True, deref()
+        # Anything that is not a weak reference was connected with
+        # ``weak=False``, which `_connect` stores as the handler itself:
+        # alive by construction, and already the value to return.
+        return True, cast(SignalHandlerT, ref)
 
     def _create_ref(self, fun: SignalHandlerT) -> SignalHandlerRefT:
         if hasattr(fun, "__func__") and hasattr(fun, "__self__"):

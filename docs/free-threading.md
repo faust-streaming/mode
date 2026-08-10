@@ -101,6 +101,49 @@ corrupts its internal linked list.
   generator, since the lock was only released when the generator was
   closed. That hazard was latent while the lock defaulted to off; turning
   the lock on by default would have made it real.
+- Taking the mutex in *every* operation that reaches `data`, not just the
+  ones `LRUCache` already defined. `LRUCache` inherits from `FastUserDict`,
+  whose methods use `self.data` directly, so `del cache[k]`, `clear()`,
+  `copy()`, `len(cache)`, `k in cache` and `repr(cache)` all reached the
+  `OrderedDict` with the mutex released — the same unguarded access the
+  segfault came from, through the ordinary mapping API. Read-only
+  operations are no safer here than writes: a `len()` racing an eviction
+  reads a linked list mid-relink. `pop`, `setdefault` and `get` are
+  overridden as well; the primitives they are inherited as were each
+  locked, but the lock was dropped between the lookup and the store, which
+  is a surprising place for a class advertising thread safety to lose an
+  invariant.
+- Enforcing the same invariant when unpickling. `__setstate__` is a second
+  construction path, and it restored the pickled state verbatim — so a
+  cache pickled on a GIL build (where `thread_safety=False` is both legal
+  and the historical default) came back on a free-threaded interpreter
+  with a `nullcontext` for a mutex, exactly the configuration `__init__`
+  refuses. It now upgrades `thread_safety` to `True` instead, which keeps
+  old pickles loadable where raising would not.
+- Evicting with `popitem(last=False)` instead of the historical
+  `pop(next(iter(data)))`. Under the mutex they are equivalent (and it is
+  the very operation the table below keeps `OrderedDict` for), but GIL
+  builds still permit — and default to — sharing an *unlocked* cache, and
+  there the three-call form races: a switch between `iter` and `next`
+  while another thread inserts raises "OrderedDict mutated during
+  iteration", and two threads resolving the same oldest key make the
+  loser's `pop` raise `KeyError`. CI caught the first flavor on a stock
+  3.13 run; at a 1µs switch interval it reproduces in almost every trial,
+  and the single-call form takes both windows away on CPython, where the
+  C `popitem` is atomic under the GIL (PyPy's is Python-level and can
+  itself raise mid-iteration unlocked — the mutex is the only fix
+  there). This narrows the
+  unlocked race, it does not close it: the check-then-act around the call
+  can still over-evict, and `popitem` still raises `KeyError` if another
+  thread empties the cache between the check and the call. Thread safety
+  remains the mutex's job — which is why the concurrency tests hammer
+  `thread_safety=True` explicitly rather than the default: on
+  free-threaded builds that is the same configuration the default
+  resolves to, and on GIL builds the unlocked default makes no promise
+  under concurrent mutation for a test to assert. The eviction mechanism
+  itself has a deterministic guard
+  (`test_eviction_does_not_iterate_the_data`), since on a locked cache no
+  stress test can tell the two forms apart.
 
 ### Why not just swap `OrderedDict` for `dict`?
 
@@ -227,6 +270,42 @@ the duration of the copy; `tuple()` falls back to the generic iterator
 protocol and does not, so `tuple(r)` raises the very error the snapshot
 exists to prevent. The first attempt at this fix used `tuple(r)` and the
 stress harness caught it.
+
+Half of that race turned out to be unreachable, which made the fix look
+better tested than it was. `disconnect(fun)` never removed a receiver
+connected with the default `weak=False`: `connect` stored `lambda: fun` and
+`disconnect` built a *second* lambda to look it up, and two lambdas never
+compare equal, so the `discard` matched nothing. The receiver set only ever
+grew, and the "connect/disconnect churn" being raced was churn in one
+direction. Sender-specific disconnects were worse than a no-op — they used
+`set.remove`, which raises `KeyError` for a receiver that is not there,
+under an `except ValueError` that could not catch it.
+
+**Also fixed** in `mode/signals.py` by storing a strong receiver as the
+handler itself, with nothing wrapped around it. A handler already hashes
+and compares the way `disconnect` needs — functions by identity, bound
+methods by `(__func__, __self__)`, so `owner.handler` matches even though
+attribute access builds a fresh object every time. The sender-specific
+path uses `discard` now, and the concurrency test asserts the receiver set
+is *empty* at the end rather than only that nothing raised.
+
+The first attempt at this stored a `_StrongRef` wrapper instead, holding
+the handler and defining `__eq__`/`__hash__` in terms of it. It made
+`disconnect` work and it passed on every CPython build — and it wedged
+PyPy. Defining those two methods in Python means `set.add` and
+`set.discard` re-enter the interpreter partway through, which releases the
+GIL and lets another thread mutate the same set while the operation that
+called out is still walking it. The receiver set is mutated from several
+threads by design, so `test_iter_receivers_while_connecting` would either
+finish in a second or never finish at all; in CI it burned the job's
+six-hour limit. Entries in that set have to hash and compare in the
+interpreter, which is a constraint on any future change to how receivers
+are represented, not just on the wrapper that ran into it.
+
+Two things bound the damage from that class of mistake now, since the
+symptom is silence rather than a failure: every wait in the concurrency
+tests is bounded (see `race` in `tests/functional/test_thread_safety.py`),
+and the test jobs carry a `timeout-minutes`.
 
 ### Not fixable here: the `gevent` extra re-enables the GIL
 

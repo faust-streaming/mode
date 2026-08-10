@@ -14,6 +14,13 @@ jobs:
     name: "Run tests with Python ${{ matrix.python-version }}"
     runs-on: "ubuntu-latest"
 
+    # The suite takes about a minute; the slowest leg (PyPy) about three.
+    # Without a limit here a job that stops making progress -- a wedged
+    # thread in one of the concurrency tests, say -- is only stopped by
+    # the six-hour default, holding up the whole run and reporting
+    # nothing useful when it finally dies.
+    timeout-minutes: 20
+
     continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
