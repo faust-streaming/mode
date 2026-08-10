@@ -113,7 +113,14 @@ class BaseSignal(BaseSignalT[T]):
         self, fun: SignalHandlerT, *, weak: bool = False, sender: Any = None
     ) -> SignalHandlerT:
         ref: SignalHandlerRefT
-        ref = self._create_ref(fun) if weak else lambda: fun
+        # NOTE: A strong receiver is stored as the handler itself,
+        # unwrapped.  Handlers already hash and compare the way
+        # `disconnect` needs (functions by identity, bound methods by
+        # ``(__func__, __self__)``), and keeping Python-level
+        # __hash__/__eq__ out of the receiver set keeps `set.add` and
+        # `set.discard` atomic -- a wrapper re-entering the interpreter
+        # mid-operation reliably wedged PyPy; see docs/free-threading.md.
+        ref = self._create_ref(fun) if weak else fun
         if self.default_sender is not None:
             sender = self.default_sender
         if sender is None:
@@ -125,14 +132,25 @@ class BaseSignal(BaseSignalT[T]):
     def disconnect(
         self, fun: SignalHandlerT, *, weak: bool = False, sender: Any = None
     ) -> None:
-        ref: SignalHandlerRefT = self._create_ref(fun) if weak else lambda: fun
+        ref: SignalHandlerRefT
+        # Mirrors `_connect`: a strong receiver is the handler itself, so
+        # the value built here compares equal to the stored entry.  (It
+        # was once a fresh ``lambda: fun``, which never matched -- making
+        # disconnect a silent no-op for strong receivers.)
+        ref = self._create_ref(fun) if weak else fun
         if self.default_sender is not None:
             sender = self.default_sender
         if sender is None:
             self._receivers.discard(ref)
         else:
             try:
-                self._filter_receivers[self._create_id(sender)].remove(ref)
+                # `discard`, not `remove`: disconnecting a receiver that
+                # was never connected for this sender is not an error, and
+                # `set.remove` signals it with KeyError -- which the
+                # `except ValueError` below never caught.  That clause is
+                # for `_create_id`, whose hash() of the sender is what can
+                # raise here.
+                self._filter_receivers[self._create_id(sender)].discard(ref)
             except ValueError:
                 pass
 
@@ -159,7 +177,19 @@ class BaseSignal(BaseSignalT[T]):
     ) -> tuple[set[SignalHandlerT], set[SignalHandlerRefT]]:
         live_receivers: set[SignalHandlerT] = set()
         dead_refs: set[SignalHandlerRefT] = set()
-        for href in r:
+        # NOTE: Iterate a snapshot.  `r` is the live receiver set shared by
+        # this signal and every clone of it, and `connect`/`disconnect`
+        # mutate it from whatever thread or task calls them -- iterating it
+        # directly raises "Set changed size during iteration".  The caller
+        # also discards dead refs from `r` using what this returns, which
+        # is itself a mutation during iteration.
+        #
+        # It must be `list(r)`, NOT `tuple(r)`: on free-threaded builds
+        # `list()` (like `set()` and `set.copy()`) takes the source set's
+        # per-object lock for the duration of the copy, while `tuple()`
+        # falls back to the generic iterator protocol and does not -- so
+        # `tuple(r)` raises the very error this snapshot exists to avoid.
+        for href in list(r):
             alive, value = self._is_alive(href)
             if alive and value is not None:
                 live_receivers.add(value)
@@ -173,13 +203,16 @@ class BaseSignal(BaseSignalT[T]):
         if isinstance(ref, ReferenceType):
             value = ref()
             return value is not None, value
-        return True, ref()
+        # Anything that is not a weak reference was connected with
+        # ``weak=False``, which `_connect` stores as the handler itself:
+        # alive by construction, and already the value to return.
+        return True, cast(SignalHandlerT, ref)
 
     def _create_ref(self, fun: SignalHandlerT) -> SignalHandlerRefT:
         if hasattr(fun, "__func__") and hasattr(fun, "__self__"):
             return cast(SignalHandlerRefT, WeakMethod(cast(MethodType, fun)))
         else:
-            return ref(fun)
+            return cast(SignalHandlerRefT, ref(fun))
 
     def _create_id(self, sender: Any) -> int:
         try:

@@ -13,6 +13,7 @@ from collections.abc import (
     MutableMapping,
 )
 from contextlib import contextmanager, suppress
+from importlib.metadata import entry_points
 from types import ModuleType
 from typing import (
     Any,
@@ -24,12 +25,6 @@ from typing import (
     Union,
     cast,
 )
-
-try:
-    from importlib.metadata import entry_points  # Python >= 3.10
-except ImportError:
-    from importlib_metadata import entry_points  # type: ignore # Python < 3.10
-
 
 from .collections import FastUserDict
 from .objects import cached_property
@@ -142,7 +137,7 @@ class FactoryMapping(FastUserDict, Generic[_T]):
             self.aliases.update(dict(load_extension_class_names(namespace)))
 
     @cached_property
-    def data(self) -> MutableMapping:  # type: ignore
+    def data(self) -> MutableMapping:
         return self.aliases
 
 
@@ -285,7 +280,7 @@ def symbol_by_name(
 
     try:
         try:
-            module = imp(  # type: ignore
+            module = imp(
                 module_name or "",
                 package=package,
                 # kwargs can be used to extend symbol_by_name when a custom
@@ -374,19 +369,8 @@ def load_extension_class_names(
     [('msgpack', 'faust_msgpack:msgpack')]
     ```
     """
-    eps = entry_points()
-    # Python 3.10+
-    if hasattr(eps, "select"):
-        for ep in eps.select(group=namespace):
-            yield RawEntrypointExtension(
-                ep.name, ":".join([ep.module, ep.attr])
-            )
-    # Python <3.10
-    else:
-        for ep in eps.get(namespace, []):
-            yield RawEntrypointExtension(
-                ep.name, ":".join([ep.module, ep.attr])
-            )
+    for ep in entry_points().select(group=namespace):
+        yield RawEntrypointExtension(ep.name, ":".join([ep.module, ep.attr]))
 
 
 @contextmanager

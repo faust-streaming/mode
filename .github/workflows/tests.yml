@@ -14,36 +14,58 @@ jobs:
     name: "Run tests with Python ${{ matrix.python-version }}"
     runs-on: "ubuntu-latest"
 
+    # The suite takes about a minute; the slowest leg (PyPy) about three.
+    # Without a limit here a job that stops making progress -- a wedged
+    # thread in one of the concurrency tests, say -- is only stopped by
+    # the six-hour default, holding up the whole run and reporting
+    # nothing useful when it finally dies.
+    timeout-minutes: 20
+
     continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
       matrix:
         python-version:
-          - "pypy3.9"
           - "pypy3.10"
-          - "3.9"
           - "3.10"
           - "3.11"
           - "3.12"
           - "3.13"
           - "3.14"
+          # Free-threaded (PEP 703) build.  Runs the same suite with the
+          # GIL disabled; see docs/free-threading.md.
+          - "3.14t"
         experimental: [ false ]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
             fetch-depth: 0
-      - uses: "actions/setup-python@v4"
+      # setup-python must be >= v5.3: that is the first release that
+      # understands the free-threaded "t" suffix.  On v4, "3.14t" is
+      # looked up as a literal version against arch x64 rather than
+      # x64-freethreaded, and the job fails with "The version '3.14t'
+      # with architecture 'x64' was not found".
+      - uses: "actions/setup-python@v5"
         with:
           python-version: "${{ matrix.python-version }}"
           cache: "pip"
           cache-dependency-path: |
             requirements-docs.txt
             requirements-tests.txt
+            requirements-typecheck.txt
             pyproject.toml
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      # mypy is optional and refuses to run on PyPy.  Installing it here
+      # is what makes tests/functional/test_typecheck.py run instead of
+      # skip, so the type checks are exercised once per CPython version
+      # rather than against a single interpreter.
+      - name: Install type checker
+        if: "!startsWith(matrix.python-version, 'pypy')"
+        run: pip install -r requirements-typecheck.txt
 
       - name: Run linting checks
         run: scripts/lint.sh

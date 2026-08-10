@@ -1,4 +1,18 @@
-"""Async iterator lost and found missing methods: aiter, anext, etc."""
+"""Async iterator utilities: `aiter`, `anext`, etc.
+
+Python gained `aiter()` and `anext()` as builtins in 3.10, long after this
+module was written.  The versions here are kept because they are not the
+same functions:
+
+- `aiter` also accepts a *synchronous* iterable, wrapping it so that it
+  can be driven with `async for`.  The builtin raises `TypeError` for
+  anything that does not implement `__aiter__`.
+- `anext` takes its default as `*default` rather than as a single
+  positional argument.
+
+Both names shadow the builtins for the rest of this module, so `aiter`
+below always means the dispatcher defined here.
+"""
 
 import collections.abc
 import sys
@@ -50,7 +64,20 @@ class AsyncIterWrapper(AsyncIterator[T]):
 
 @singledispatch
 def aiter(it: Any) -> AsyncIterator[object]:
-    """Create iterator from iterable.
+    """Create an async iterator from an async *or* synchronous iterable.
+
+    Unlike the `aiter` builtin added in Python 3.10, a synchronous
+    iterable is accepted as well: it is wrapped in `AsyncIterWrapper` so
+    that it can be consumed with `async for`.
+
+    ```sh
+    >>> [x async for x in aiter([1, 2, 3])]
+    [1, 2, 3]
+    ```
+
+    Raises:
+        TypeError: if the argument is neither an `AsyncIterable` nor an
+            `Iterable`.
 
     Notes:
         If the object is already an iterator, the iterator
@@ -73,6 +100,10 @@ def _aiter_iter(it: Iterable[T]) -> AsyncIterator[T]:
 
 async def anext(it: AsyncIterator[T], *default: Optional[T]) -> T:
     """Get next value from async iterator, or `default` if empty.
+
+    Differs from the `anext` builtin added in Python 3.10: the default is
+    taken as `*default`, so passing no default and passing one are both
+    handled by this single signature.
 
     Raises:
         :exc:`StopAsyncIteration`: if default is not defined and
@@ -108,9 +139,11 @@ class arange(AsyncIterable[int]):
         self, *slice_args: Optional[int], **slice_kwargs: Optional[int]
     ) -> None:
         s = slice(*slice_args, **slice_kwargs)
-        self.start = s.start or 0
-        self.stop = s.stop
-        self.step = s.step or 1
+        if s.stop is None:
+            raise TypeError("arange() requires a stop argument")
+        self.start: int = s.start or 0
+        self.stop: int = s.stop
+        self.step: int = s.step or 1
         self._range = range(self.start, self.stop, self.step)
 
     def count(self, n: int) -> int:
@@ -165,6 +198,8 @@ async def chunks(it: AsyncIterable[T], n: int) -> AsyncIterable[list[T]]:
     [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 10]]
     ```
     """
-    ait = aiter(it)
+    # `aiter` is a singledispatch function, so its return type cannot be
+    # tied to the type of its argument.
+    ait = cast(AsyncIterator[T], aiter(it))
     async for item in ait:
         yield [item] + [x async for x in aslice(ait, n - 1)]

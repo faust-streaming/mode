@@ -52,7 +52,25 @@ You can run the format script to make your change compliant:
 + ruff check mode tests --fix
 ```
 
-_The script uses [ruff](https://github.com/astral-sh/ruff) & [mypy](https://mypy-lang.org/)._
+_The script uses [ruff](https://github.com/astral-sh/ruff)._
+
+### Type check the code
+
+[mypy](https://mypy-lang.org/) is an optional dependency, so it is not
+installed by `requirements.txt`:
+
+```sh
+(venv) $ pip install -r requirements-typecheck.txt
+(venv) $ ./scripts/typecheck.sh
++ mypy -p mode
+Success: no issues found in 45 source files
+```
+
+The suite also runs it, as `tests/functional/test_typecheck.py`. That test
+skips when mypy is not installed, so you only need it if you want the type
+checks locally -- CI installs it on the CPython legs of the matrix, and the
+check runs there once per Python version. It has to be CPython: mypy exits
+with an error under PyPy.
 
 ### Run tests
 

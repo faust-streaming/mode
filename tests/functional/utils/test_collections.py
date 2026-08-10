@@ -546,12 +546,8 @@ class test_LRUCache:
 
         assert d.popitem() == (199, 199)
 
-    def test_iter_keys_items_values(self, d):
-        d.update({"a": 1, "b": 2, "c": 3})
-        assert list(iter(d)) == ["a", "b", "c"]
-        assert list(iter(d)) == list(d.keys())
-        assert list(d.values()) == [1, 2, 3]
-        assert list(d.items()) == [("a", 1), ("b", 2), ("c", 3)]
+    # (Iteration order is pinned by
+    # test_LRUCache_ordering.test_iteration_follows_insertion_order.)
 
     def test_incr(self, d):
         d["a"] = "0"
@@ -568,6 +564,93 @@ class test_LRUCache:
         d.update({"a": 1, "b": 2, "c": 3})
         e = pickle.loads(pickle.dumps(d))
         assert e == d
+
+
+class test_LRUCache_ordering:
+    """Pin the ordering semantics LRUCache depends on.
+
+    Every one of these is a property of the backing mapping rather than of
+    code in this repo, so they are the assertions most likely to diverge
+    between interpreters -- CPython, PyPy and free-threaded builds each
+    implement ordered mappings differently.  Keeping them explicit means a
+    divergence shows up as a named test failure on the relevant leg of the
+    matrix instead of as mysterious cache behaviour downstream.
+    """
+
+    def test_iteration_follows_insertion_order(self):
+        c = LRUCache()
+        for key in "abc":
+            c[key] = key.upper()
+        assert list(c) == ["a", "b", "c"]
+        assert list(c.keys()) == ["a", "b", "c"]
+        assert list(c.values()) == ["A", "B", "C"]
+        assert list(c.items()) == [("a", "A"), ("b", "B"), ("c", "C")]
+
+    def test_reading_a_key_moves_it_to_the_end(self):
+        # The LRU touch: this is what makes eviction least-recently-*used*
+        # rather than merely oldest-inserted.
+        c = LRUCache()
+        for key in "abc":
+            c[key] = key
+        c["a"]
+        assert list(c) == ["b", "c", "a"]
+
+    def test_updating_an_existing_key_keeps_its_position(self):
+        c = LRUCache()
+        for key in "abc":
+            c[key] = key
+        c["a"] = "changed"
+        assert list(c) == ["a", "b", "c"]
+        assert c.data["a"] == "changed"
+
+    def test_updating_an_existing_key_does_not_evict(self):
+        # Regression: __setitem__ used to evict before checking whether the
+        # key was already present, so updating a key in a full cache
+        # discarded an unrelated entry and left the cache under its limit.
+        c = LRUCache(limit=3)
+        for key in "abc":
+            c[key] = key
+        c["c"] = "changed"
+        assert len(c) == 3
+        assert list(c) == ["a", "b", "c"]
+
+    def test_eviction_discards_the_oldest(self):
+        c = LRUCache(limit=3)
+        for key in "abcd":
+            c[key] = key
+        assert list(c) == ["b", "c", "d"]
+
+    def test_eviction_respects_a_touch(self):
+        c = LRUCache(limit=3)
+        for key in "abc":
+            c[key] = key
+        c["a"]
+        c["d"] = "d"
+        assert list(c) == ["c", "a", "d"]
+
+    def test_update_evicts_the_oldest_first(self):
+        c = LRUCache(limit=3)
+        c.update({key: key for key in "abcde"})
+        assert list(c) == ["c", "d", "e"]
+
+    def test_popitem_pops_from_either_end(self):
+        c = LRUCache()
+        for key in "abc":
+            c[key] = key
+        assert c.popitem() == ("c", "c")
+        assert c.popitem(last=False) == ("a", "a")
+
+    def test_popitem_empty_raises_KeyError(self):
+        with pytest.raises(KeyError):
+            LRUCache().popitem()
+        with pytest.raises(KeyError):
+            LRUCache().popitem(last=False)
+
+    def test_order_survives_a_pickle_round_trip(self):
+        c = LRUCache()
+        for key in "abc":
+            c[key] = key
+        assert list(pickle.loads(pickle.dumps(c))) == ["a", "b", "c"]
 
 
 class test_AttributeDictMixin:

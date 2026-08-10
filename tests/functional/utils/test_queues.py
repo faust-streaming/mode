@@ -164,3 +164,14 @@ class test_ThrowableQueue:
 
         with pytest.raises(asyncio.QueueEmpty):
             queue.get_nowait()
+
+
+@pytest.mark.parametrize("queue_type", [FlowControlQueue, ThrowableQueue])
+def test_queues_are_generic(queue_type):
+    # The queues declare an item type, so they must be subscriptable both
+    # for annotations and for instantiation.
+    assert queue_type[int] is not None
+    flow_control = FlowControlEvent(initially_suspended=False)
+    queue = queue_type[int](flow_control=flow_control)
+    queue.put_nowait(1)
+    assert queue.get_nowait() == 1
