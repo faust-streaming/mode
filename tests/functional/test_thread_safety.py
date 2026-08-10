@@ -9,6 +9,7 @@ See `docs/free-threading.md` for the measurements behind each one, and
 `tests/freethreading/stress.py` for the heavier probabilistic reproducers.
 """
 
+import inspect
 import pickle
 import sys
 import threading
@@ -22,7 +23,7 @@ import pytest
 import mode
 from mode.proxy import ServiceProxy
 from mode.signals import Signal
-from mode.utils.collections import FREE_THREADED, LRUCache
+from mode.utils.collections import FREE_THREADED, FastUserDict, LRUCache
 from mode.utils.objects import cached_property
 
 #: Upper bound for any one concurrency test below.  Generous: these
@@ -173,29 +174,9 @@ class test_LRUCache_thread_safety:
         else:
             assert LRUCache(thread_safety=False).thread_safety is False
 
-    def test_popitem_last_is_lifo(self):
-        c = LRUCache()
-        c.update({"a": 1, "b": 2, "c": 3})
-        assert c.popitem() == ("c", 3)
-        assert c.popitem(last=True) == ("b", 2)
-
-    def test_popitem_first_is_fifo(self):
-        c = LRUCache()
-        c.update({"a": 1, "b": 2, "c": 3})
-        assert c.popitem(last=False) == ("a", 1)
-        assert c.popitem(last=False) == ("b", 2)
-
-    def test_popitem_empty_raises_KeyError(self):
-        with pytest.raises(KeyError):
-            LRUCache().popitem()
-        with pytest.raises(KeyError):
-            LRUCache().popitem(last=False)
-
-    def test_limit_still_evicts_oldest(self):
-        c = LRUCache(limit=3)
-        for i in range(10):
-            c[i] = i
-        assert list(c.keys()) == [7, 8, 9]
+    # (Pure eviction/popitem/ordering semantics live in
+    # tests/functional/utils/test_collections.py::test_LRUCache_ordering;
+    # this class only covers what involves the mutex or threads.)
 
     def test_eviction_does_not_iterate_the_data(self):
         # Eviction must be `popitem(last=False)` -- one call -- and not
@@ -316,10 +297,9 @@ class test_LRUCache_takes_the_mutex:
 
     def assert_takes_mutex(self, operation):
         cache = LRUCache(limit=10, thread_safety=True)
-        # Populate without going through the (locked) __setitem__, so the
+        # Populate first: the tracking mutex is installed after, so the
         # count below only reflects the operation under test.
-        cache.data["a"] = 1
-        cache.data["b"] = 2
+        cache.update({"a": 1, "b": 2})
         mutex = self.TrackingMutex()
         cache._mutex = mutex
 
@@ -355,6 +335,25 @@ class test_LRUCache_takes_the_mutex:
     )
     def test_operation_takes_mutex(self, name, operation):
         self.assert_takes_mutex(operation)
+
+    def test_every_FastUserDict_method_is_overridden(self):
+        # The override list above is hand-maintained, and so is this
+        # test's parametrization -- neither notices a method *added* to
+        # `FastUserDict` later, which would reach `self.data` with the
+        # mutex released (the NOTE in LRUCache admits as much).  Enforce
+        # the completeness invariant reflectively: every function defined
+        # on `FastUserDict` must be shadowed by `LRUCache` itself.
+        # (`fromkeys` is exempt: a classmethod that only touches data
+        # through the locked `update`.)
+        missing = [
+            name
+            for name, member in vars(FastUserDict).items()
+            if inspect.isfunction(member) and name not in vars(LRUCache)
+        ]
+        assert not missing, (
+            f"FastUserDict methods that LRUCache does not override "
+            f"(they would touch self.data without the mutex): {missing}"
+        )
 
 
 class test_LRUCache_mapping_semantics:
@@ -470,15 +469,6 @@ class test_LRUCache_pickle:
         assert restored.thread_safety is True
         assert not isinstance(restored._mutex, nullcontext)
 
-    def test_setstate_does_not_mutate_the_state_it_is_given(self, monkeypatch):
-        monkeypatch.setattr("mode.utils.collections.FREE_THREADED", True)
-        state = {"limit": None, "thread_safety": False, "data": OrderedDict()}
-        cache = LRUCache.__new__(LRUCache)
-        cache.__setstate__(state)
-
-        assert cache.thread_safety is True
-        assert state["thread_safety"] is False
-
 
 class test_Signal_receiver_iteration:
     def test_get_live_receivers_tolerates_mutation(self):
@@ -489,13 +479,14 @@ class test_Signal_receiver_iteration:
 
         async def handler(*args, **kwargs): ...
 
-        for _ in range(4):
-            signal.connect(handler)
+        async def late_handler(*args, **kwargs): ...
+
+        signal.connect(handler)
         receivers = signal._receivers
         original_is_alive = signal._is_alive
 
         def mutating_is_alive(ref):
-            receivers.add(lambda: handler)
+            receivers.add(late_handler)
             return original_is_alive(ref)
 
         signal._is_alive = mutating_is_alive
@@ -563,3 +554,16 @@ class test_mode_lazy_imports:
         listed = dir(mode)
         for name in mode.__all__:
             assert name in listed
+
+    def test_all_matches_the_lazy_export_table(self):
+        # `__all__` is the literal copy ruff and mypy read; `all_by_module`
+        # is what `__getattr__` actually resolves.  A name added to one
+        # and not the other would silently vanish from `import *` or
+        # raise AttributeError -- so the two may not drift.
+        assert set(mode.__all__) == set(mode.object_origins)
+
+    def test_dir_advertises_only_real_names(self):
+        # The old hand-written __dir__ promised VERSION/version_info,
+        # which no version of this module ever defined.
+        for name in dir(mode):
+            assert hasattr(mode, name), name

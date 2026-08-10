@@ -546,12 +546,8 @@ class test_LRUCache:
 
         assert d.popitem() == (199, 199)
 
-    def test_iter_keys_items_values(self, d):
-        d.update({"a": 1, "b": 2, "c": 3})
-        assert list(iter(d)) == ["a", "b", "c"]
-        assert list(iter(d)) == list(d.keys())
-        assert list(d.values()) == [1, 2, 3]
-        assert list(d.items()) == [("a", 1), ("b", 2), ("c", 3)]
+    # (Iteration order is pinned by
+    # test_LRUCache_ordering.test_iteration_follows_insertion_order.)
 
     def test_incr(self, d):
         d["a"] = "0"
@@ -643,6 +639,12 @@ class test_LRUCache_ordering:
             c[key] = key
         assert c.popitem() == ("c", "c")
         assert c.popitem(last=False) == ("a", "a")
+
+    def test_popitem_empty_raises_KeyError(self):
+        with pytest.raises(KeyError):
+            LRUCache().popitem()
+        with pytest.raises(KeyError):
+            LRUCache().popitem(last=False)
 
     def test_order_survives_a_pickle_round_trip(self):
         c = LRUCache()

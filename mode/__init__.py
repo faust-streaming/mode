@@ -31,6 +31,10 @@ if typing.TYPE_CHECKING:  # pragma: no cover
     from .utils.times import Seconds, want_seconds
     from .worker import Worker
 
+# NOTE: Must list exactly the names in `all_by_module` below.  It is kept
+# as a literal (rather than derived) because ruff and mypy only recognise
+# the TYPE_CHECKING re-exports through a literal __all__; the sync is
+# enforced by tests/functional/test_thread_safety.py's lazy-import tests.
 __all__ = [
     "BaseSignal",
     "BaseSignalT",
@@ -117,16 +121,9 @@ def __getattr__(name: str) -> Any:
 
 
 def __dir__() -> Sequence[str]:
-    return [
-        *__all__,
-        "__file__",
-        "__path__",
-        "__doc__",
-        "__all__",
-        "__docformat__",
-        "__name__",
-        "VERSION",
-        "version_info",
-        "__package__",
-        "__version__",
-    ]
+    # Everything actually in the module namespace, plus the lazy exports
+    # __getattr__ can still resolve.  Derived so it cannot drift into
+    # advertising names that do not exist (the old hand-written list was
+    # carried over from a template and promised VERSION/version_info,
+    # which no version of this module ever defined).
+    return sorted(set(globals()) | set(object_origins))
