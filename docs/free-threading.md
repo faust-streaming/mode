@@ -120,6 +120,30 @@ corrupts its internal linked list.
   with a `nullcontext` for a mutex, exactly the configuration `__init__`
   refuses. It now upgrades `thread_safety` to `True` instead, which keeps
   old pickles loadable where raising would not.
+- Evicting with `popitem(last=False)` instead of the historical
+  `pop(next(iter(data)))`. Under the mutex they are equivalent (and it is
+  the very operation the table below keeps `OrderedDict` for), but GIL
+  builds still permit — and default to — sharing an *unlocked* cache, and
+  there the three-call form races: a switch between `iter` and `next`
+  while another thread inserts raises "OrderedDict mutated during
+  iteration", and two threads resolving the same oldest key make the
+  loser's `pop` raise `KeyError`. CI caught the first flavor on a stock
+  3.13 run; at a 1µs switch interval it reproduces in almost every trial,
+  and the single-call form takes both windows away on CPython, where the
+  C `popitem` is atomic under the GIL (PyPy's is Python-level and can
+  itself raise mid-iteration unlocked — the mutex is the only fix
+  there). This narrows the
+  unlocked race, it does not close it: the check-then-act around the call
+  can still over-evict, and `popitem` still raises `KeyError` if another
+  thread empties the cache between the check and the call. Thread safety
+  remains the mutex's job — which is why the concurrency tests hammer
+  `thread_safety=True` explicitly rather than the default: on
+  free-threaded builds that is the same configuration the default
+  resolves to, and on GIL builds the unlocked default makes no promise
+  under concurrent mutation for a test to assert. The eviction mechanism
+  itself has a deterministic guard
+  (`test_eviction_does_not_iterate_the_data`), since on a locked cache no
+  stress test can tell the two forms apart.
 
 ### Why not just swap `OrderedDict` for `dict`?
 
@@ -257,14 +281,31 @@ direction. Sender-specific disconnects were worse than a no-op — they used
 `set.remove`, which raises `KeyError` for a receiver that is not there,
 under an `except ValueError` that could not catch it.
 
-**Also fixed** in `mode/signals.py` by storing strong receivers as a
-`_StrongRef` — a zero-argument callable, like `weakref.ref`, but one whose
-`__eq__`/`__hash__` are those of the wrapped handler, so a reference built
-during `disconnect` matches the one stored by `connect`. Bound methods work
-because equality decides rather than identity: `owner.handler` is a fresh
-object on every attribute access. The sender-specific path uses `discard`
-now, and the concurrency test asserts the receiver set is *empty* at the
-end rather than only that nothing raised.
+**Also fixed** in `mode/signals.py` by storing a strong receiver as the
+handler itself, with nothing wrapped around it. A handler already hashes
+and compares the way `disconnect` needs — functions by identity, bound
+methods by `(__func__, __self__)`, so `owner.handler` matches even though
+attribute access builds a fresh object every time. The sender-specific
+path uses `discard` now, and the concurrency test asserts the receiver set
+is *empty* at the end rather than only that nothing raised.
+
+The first attempt at this stored a `_StrongRef` wrapper instead, holding
+the handler and defining `__eq__`/`__hash__` in terms of it. It made
+`disconnect` work and it passed on every CPython build — and it wedged
+PyPy. Defining those two methods in Python means `set.add` and
+`set.discard` re-enter the interpreter partway through, which releases the
+GIL and lets another thread mutate the same set while the operation that
+called out is still walking it. The receiver set is mutated from several
+threads by design, so `test_iter_receivers_while_connecting` would either
+finish in a second or never finish at all; in CI it burned the job's
+six-hour limit. Entries in that set have to hash and compare in the
+interpreter, which is a constraint on any future change to how receivers
+are represented, not just on the wrapper that ran into it.
+
+Two things bound the damage from that class of mistake now, since the
+symptom is silence rather than a failure: every wait in the concurrency
+tests is bounded (see `race` in `tests/functional/test_thread_safety.py`),
+and the test jobs carry a `timeout-minutes`.
 
 ### Not fixable here: the `gevent` extra re-enables the GIL
 
