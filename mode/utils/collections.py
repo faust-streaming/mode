@@ -2,6 +2,7 @@
 
 import abc
 import collections.abc
+import sys
 import threading
 import typing
 from collections import OrderedDict, UserList
@@ -51,6 +52,12 @@ else:
         class LazySettings: ...
 
 
+#: True when running on a free-threaded (:pep:`703`) build with the GIL
+#: actually disabled.  Checked at runtime rather than build time so that
+#: ``PYTHON_GIL=1`` on a free-threaded interpreter is respected.
+FREE_THREADED: bool = not getattr(sys, "_is_gil_enabled", lambda: True)()
+
+
 __all__ = [
     "AttributeDict",
     "AttributeDictMixin",
@@ -65,23 +72,42 @@ __all__ = [
     "force_mapping",
 ]
 
+if typing.TYPE_CHECKING:
+    from _typeshed import SupportsRichComparison
+else:
+    SupportsRichComparison = Any
+
 T = TypeVar("T")
 T_co = TypeVar("T_co", covariant=True)
 KT = TypeVar("KT")
 VT = TypeVar("VT")
 _S = TypeVar("_S")
+#: `heapq` orders elements by comparing them, so a heap can only hold
+#: values that support `<`/`>` (`_typeshed.SupportsRichComparison`).
+_ComparableT = TypeVar("_ComparableT", bound="SupportsRichComparison")
 
 _Setlike = Union[Set[T], Iterable[T]]
 
+#: Sentinel for "no default given", so that `None` stays a usable default.
+_MISSING: Any = object()
 
-class Heap(MutableSequence[T]):
-    """Generic interface to `heapq`."""
 
-    def __init__(self, data: Optional[Sequence[T]] = None) -> None:
+class Heap(MutableSequence[_ComparableT]):
+    """Generic interface to `heapq`.
+
+    Elements have to be orderable: `heapq` maintains the heap invariant by
+    comparing them, so the element type is bound to
+    `_typeshed.SupportsRichComparison` -- anything defining `__lt__` or
+    `__gt__`.  `Heap[int]` and `Heap[str]` are fine, while an element type
+    with no ordering is rejected by the type checker instead of failing at
+    the first `push`.
+    """
+
+    def __init__(self, data: Optional[Sequence[_ComparableT]] = None) -> None:
         self.data = list(data or [])
         heapify(self.data)
 
-    def pop(self, index: int = 0) -> T:
+    def pop(self, index: int = 0) -> _ComparableT:
         """Pop the smallest item off the heap.
 
         Maintains the heap invariant.
@@ -93,11 +119,11 @@ class Heap(MutableSequence[T]):
                 "Heap can only pop index 0, please use h.data.pop(index)"
             )
 
-    def push(self, item: T) -> None:
+    def push(self, item: _ComparableT) -> None:
         """Push item onto heap, maintaining the heap invariant."""
         heappush(self.data, item)
 
-    def pushpop(self, item: T) -> T:
+    def pushpop(self, item: _ComparableT) -> _ComparableT:
         """Push item on the heap, then pop and return from the heap.
 
         The combined action runs more efficiently than
@@ -105,7 +131,7 @@ class Heap(MutableSequence[T]):
         """
         return heappushpop(self.data, item)
 
-    def replace(self, item: T) -> T:
+    def replace(self, item: _ComparableT) -> _ComparableT:
         """Pop and return the current smallest value, and add the new item.
 
         This is more efficient than :meth`pop` followed by `push`,
@@ -122,21 +148,25 @@ class Heap(MutableSequence[T]):
         """
         return heapreplace(self.data, item)
 
-    def nlargest(self, n: int, key: Optional[Callable] = None) -> list[T]:
+    def nlargest(
+        self, n: int, key: Optional[Callable] = None
+    ) -> list[_ComparableT]:
         """Find the n largest elements in the dataset."""
         if key is not None:
             return nlargest(n, self.data, key=key)
         else:
             return nlargest(n, self.data)
 
-    def nsmallest(self, n: int, key: Optional[Callable] = None) -> list[T]:
+    def nsmallest(
+        self, n: int, key: Optional[Callable] = None
+    ) -> list[_ComparableT]:
         """Find the n smallest elements in the dataset."""
         if key is not None:
             return nsmallest(n, self.data, key=key)
         else:
             return nsmallest(n, self.data)
 
-    def insert(self, index: int, value: T) -> None:
+    def insert(self, index: int, value: _ComparableT) -> None:
         self.data.insert(index, value)
 
     def __str__(self) -> str:
@@ -146,19 +176,19 @@ class Heap(MutableSequence[T]):
         return repr(self.data)
 
     @overload
-    def __getitem__(self, s: int) -> T: ...
+    def __getitem__(self, s: int) -> _ComparableT: ...
 
     @overload
-    def __getitem__(self, s: slice) -> MutableSequence[T]: ...
+    def __getitem__(self, s: slice) -> MutableSequence[_ComparableT]: ...
 
     def __getitem__(self, s: Any) -> Any:
         return self.data.__getitem__(s)
 
     @overload
-    def __setitem__(self, s: int, o: T) -> None: ...
+    def __setitem__(self, s: int, o: _ComparableT) -> None: ...
 
     @overload
-    def __setitem__(self, s: slice, o: Iterable[T]) -> None: ...
+    def __setitem__(self, s: slice, o: Iterable[_ComparableT]) -> None: ...
 
     def __setitem__(self, s: Any, o: Any) -> None:
         self.data.__setitem__(s, o)
@@ -264,7 +294,7 @@ class FastUserSet(MutableSet[T]):
     def __len__(self) -> int:
         return len(self.data)
 
-    def __or__(self, other: Set) -> Set[Union[T, object]]:
+    def __or__(self, other: Set[_S]) -> Set[Union[T, _S]]:
         return self.data.__or__(other)
 
     def __rand__(self, other: Set[T]) -> MutableSet[T]:
@@ -294,8 +324,8 @@ class FastUserSet(MutableSet[T]):
     def __str__(self) -> str:
         return str(self.data)
 
-    def __sub__(self, other: Set[Any]) -> MutableSet[object]:
-        return cast(MutableSet, self.data.__sub__(other))
+    def __sub__(self, other: Set[Any]) -> MutableSet[T]:
+        return cast(MutableSet[T], self.data.__sub__(other))
 
     def __xor__(self, other: Set) -> MutableSet[T]:
         return cast(MutableSet, self.data.__xor__(other))
@@ -331,7 +361,7 @@ class FastUserSet(MutableSet[T]):
         return self
 
     def __ior__(self, other: Set[_S]) -> "FastUserSet":
-        self.data.__ior__(other)
+        cast(MutableSet[Union[T, _S]], self.data).__ior__(other)
         return self
 
     def __isub__(self, other: Set[Any]) -> "FastUserSet[T]":
@@ -339,7 +369,7 @@ class FastUserSet(MutableSet[T]):
         return self
 
     def __ixor__(self, other: Set[_S]) -> "FastUserSet":
-        self.data.__ixor__(other)
+        cast(MutableSet[Union[T, _S]], self.data).__ixor__(other)
         return self
 
     def add(self, value: T) -> None:
@@ -409,7 +439,7 @@ class ProxyItemsView(ItemsView):
         yield from self._mapping._items()
 
 
-class LRUCache(FastUserDict, MutableMapping[KT, VT], MappingViewProxy):
+class LRUCache(FastUserDict[KT, VT], MutableMapping[KT, VT], MappingViewProxy):
     """LRU Cache implementation using a doubly linked list to track access.
 
     Arguments:
@@ -418,7 +448,23 @@ class LRUCache(FastUserDict, MutableMapping[KT, VT], MappingViewProxy):
             the *Least Recently Used* key will be discarded from the
             cache.
         thread_safety (bool): Enable if multiple OS threads are going
-            to access/mutate the cache.
+            to access/mutate the cache.  Defaults to :const:`True` on
+            free-threaded builds, where there is no GIL to make unguarded
+            access incidentally safe, and :const:`False` otherwise (which
+            is what it has always been).  It cannot be turned off on a
+            free-threaded build -- see the note below.
+
+    Note:
+        The backing store is an :class:`~collections.OrderedDict` rather
+        than a plain :class:`dict`: evicting the oldest entry is this
+        class's hot path, and ``popitem(last=False)`` does it in O(1) via
+        the linked list, where the ``dict`` equivalent degrades badly as
+        the cache grows (measured in ``docs/free-threading.md``).  The
+        cost of that linked list is that `OrderedDict` is not safe to
+        mutate concurrently on free-threaded builds -- racing threads can
+        corrupt it badly enough to segfault the interpreter -- so on
+        those builds the mutex is mandatory rather than merely on by
+        default.
     """
 
     limit: Optional[int]
@@ -427,17 +473,40 @@ class LRUCache(FastUserDict, MutableMapping[KT, VT], MappingViewProxy):
     data: OrderedDict
 
     def __init__(
-        self, limit: Optional[int] = None, *, thread_safety: bool = False
+        self,
+        limit: Optional[int] = None,
+        *,
+        thread_safety: Optional[bool] = None,
     ) -> None:
         self.limit = limit
+        if thread_safety is None:
+            thread_safety = FREE_THREADED
+        elif FREE_THREADED and not thread_safety:
+            # Not a preference we can honour: an unguarded OrderedDict on a
+            # free-threaded build is memory-unsafe, not merely racy, and
+            # taking the interpreter down is a worse outcome than ignoring
+            # the argument.  Say so rather than doing it silently.
+            raise ValueError(
+                "LRUCache(thread_safety=False) is not supported on "
+                "free-threaded builds: the backing OrderedDict can be "
+                "corrupted by concurrent mutation badly enough to "
+                "segfault the interpreter. Omit the argument to get the "
+                "mutex, which is the default here."
+            )
         self.thread_safety = thread_safety
         self._mutex = self._new_lock()
         self.data: OrderedDict = OrderedDict()
 
     def __getitem__(self, key: KT) -> VT:
         with self._mutex:
-            value = self[key] = self.data.pop(key)
-            return cast(VT, value)
+            return self._touch(key)
+
+    def _touch(self, key: KT) -> VT:
+        # Caller must hold the mutex.  Pop and re-insert to mark the key
+        # most recently used.
+        value = self.data.pop(key)
+        self.data[key] = value
+        return cast(VT, value)
 
     def update(self, *args: Any, **kwargs: Any) -> None:
         with self._mutex:
@@ -453,52 +522,126 @@ class LRUCache(FastUserDict, MutableMapping[KT, VT], MappingViewProxy):
             return self.data.popitem(last)
 
     def __setitem__(self, key: KT, value: VT) -> None:
-        # remove least recently used key.
         with self._mutex:
-            if self.limit and len(self.data) >= self.limit:
-                self.data.pop(next(iter(self.data)))
-            self.data[key] = value
+            self._store(key, value)
+
+    def _store(self, key: KT, value: VT) -> None:
+        # Caller must hold the mutex.  Evict the least recently used
+        # entry when inserting a *new* key into a full cache -- updating
+        # an existing key does not grow the cache, so evicting for it
+        # would shrink a full cache on every such update.  The cheap size
+        # checks run first so unlimited and under-limit caches skip the
+        # containment probe.  Eviction is a single `popitem(last=False)`
+        # call, NOT `pop(next(iter(...)))`, so that even an unlocked
+        # cache on a GIL build (the historical default there) cannot race
+        # the iter/next/pop gaps; docs/free-threading.md has the story.
+        if (
+            self.limit
+            and len(self.data) >= self.limit
+            and key not in self.data
+        ):
+            self.data.popitem(last=False)
+        self.data[key] = value
+
+    # NOTE: Iteration operates on a `copy()` snapshot taken under the
+    # mutex, iterated with the mutex released.  Holding the lock across
+    # yields would keep it held for as long as the *consumer* takes --
+    # forever, if a generator is abandoned half-consumed -- and iterating
+    # the live dict is what "changed size during iteration" used to be.
 
     def __iter__(self) -> Iterator:
-        return iter(self.data)
+        return self._keys()
 
     def keys(self) -> KeysView[KT]:
         return ProxyKeysView(self)
 
     def _keys(self) -> Iterator[KT]:
-        # userdict.keys in py3k calls __getitem__
-        with self._mutex:
-            yield from self.data.keys()
+        return iter(self.copy())
 
     def values(self) -> ValuesView[VT]:
         return ProxyValuesView(self)
 
     def _values(self) -> Iterator[VT]:
-        with self._mutex:
-            for k in self:
-                try:
-                    yield self.data[k]
-                except KeyError:  # pragma: no cover
-                    pass
+        return iter(self.copy().values())
 
     def items(self) -> ItemsView[KT, VT]:
         return ProxyItemsView(self)
 
     def _items(self) -> Iterator[tuple[KT, VT]]:
-        with self._mutex:
-            for k in self:
-                try:
-                    yield (k, self.data[k])
-                except KeyError:  # pragma: no cover
-                    pass
+        return iter(self.copy().items())
 
     def incr(self, key: KT, delta: int = 1) -> int:
         with self._mutex:
             # this acts as memcached does- store as a string, but return a
             # integer as long as it exists and we can cast it
             newval = int(self.data.pop(key)) + delta
-            self[key] = cast(VT, str(newval))
+            self._store(key, cast(VT, str(newval)))
             return newval
+
+    # NOTE: Everything below re-implements an inherited method that would
+    # otherwise reach `self.data` with the mutex released.  On a
+    # free-threaded build that is not merely a stale answer: touching the
+    # backing OrderedDict while another thread mutates it can corrupt its
+    # linked list badly enough to take the interpreter down, and a
+    # read-only operation such as `len` or `in` is just as capable of
+    # observing the half-updated state as a write is.  Anything added to
+    # `FastUserDict` that uses `self.data` directly needs an override here
+    # too.
+
+    def __delitem__(self, key: KT) -> None:
+        with self._mutex:
+            del self.data[key]
+
+    def __len__(self) -> int:
+        with self._mutex:
+            return len(self.data)
+
+    def __contains__(self, key: object) -> bool:
+        with self._mutex:
+            return key in self.data
+
+    def __repr__(self) -> str:
+        with self._mutex:
+            return repr(self.data)
+
+    def copy(self) -> dict:
+        with self._mutex:
+            return dict(self.data)
+
+    def clear(self) -> None:
+        with self._mutex:
+            self.data.clear()
+
+    # `pop` and `setdefault` below are inherited as combinations of the
+    # locked primitives above, which is already memory-safe -- but the
+    # lock is dropped between the lookup and the store, a surprising
+    # place for a class that advertises thread safety to lose an
+    # invariant.  They are made atomic instead.  (`get` needs no
+    # override: its only data access is the single, already-locked
+    # `self[key]`.)
+
+    @overload
+    def pop(self, key: KT) -> VT: ...
+
+    @overload
+    def pop(self, key: KT, default: Union[VT, T]) -> Union[VT, T]: ...
+
+    def pop(self, key: KT, default: Any = _MISSING) -> Any:
+        with self._mutex:
+            try:
+                return cast(VT, self.data.pop(key))
+            except KeyError:
+                if default is _MISSING:
+                    raise
+                return default
+
+    def setdefault(self, key: KT, default: Any = None) -> Any:
+        with self._mutex:
+            try:
+                return self._touch(key)
+            except KeyError:
+                self._store(key, cast(VT, default))
+                return default
 
     def _new_lock(self) -> AbstractContextManager:
         if self.thread_safety:
@@ -511,6 +654,15 @@ class LRUCache(FastUserDict, MutableMapping[KT, VT], MappingViewProxy):
         return d
 
     def __setstate__(self, state: dict[str, Any]) -> None:
+        # Unpickling is another way to construct the object, so it has to
+        # honour the same invariant `__init__` does: no unguarded
+        # OrderedDict on a free-threaded build.  Pickles written by an
+        # older version -- or on a GIL build, where thread_safety=False is
+        # both the default and legal -- would otherwise come back here
+        # with `nullcontext` for a mutex.  Upgrading the flag keeps those
+        # pickles loadable, which raising would not.
+        if FREE_THREADED and not state.get("thread_safety", False):
+            state["thread_safety"] = True
         self.__dict__ = state
         self._mutex = self._new_lock()
 
@@ -548,29 +700,29 @@ class ManagedUserSet(FastUserSet[T]):
     def raw_update(self, *args: Any, **kwargs: Any) -> None:
         self.data.update(*args, **kwargs)  # type: ignore
 
-    def __iand__(self, other: Set[Any]) -> "FastUserSet":
-        self.on_change(added=set(), removed=cast(Set, self).difference(other))
+    def __iand__(self, other: Set[Any]) -> "ManagedUserSet[T]":
+        self.on_change(added=set(), removed=cast(set, self).difference(other))
         self.data.__iand__(other)
         return self
 
-    def __ior__(self, other: Set[_S]) -> "FastUserSet":
+    def __ior__(self, other: Set[_S]) -> "ManagedUserSet[T]":
         self.on_change(added=cast(set, other).difference(self), removed=set())
-        self.data.__ior__(other)
+        cast(MutableSet[Union[T, _S]], self.data).__ior__(other)
         return self
 
-    def __isub__(self, other: Set[Any]) -> "FastUserSet":
+    def __isub__(self, other: Set[Any]) -> "ManagedUserSet[T]":
         self.on_change(
             added=set(), removed=cast(set, self.data).intersection(other)
         )
         self.data.__isub__(other)
         return self
 
-    def __ixor__(self, other: Set[_S]) -> "FastUserSet":
+    def __ixor__(self, other: Set[_S]) -> "ManagedUserSet[T]":
         self.on_change(
             added=cast(set, other).difference(self.data),
             removed=cast(set, self.data).intersection(other),
         )
-        self.data.__ixor__(other)
+        cast(MutableSet[Union[T, _S]], self.data).__ixor__(other)
         return self
 
     def difference_update(self, other: _Setlike[T]) -> None:
@@ -633,7 +785,7 @@ class ManagedUserDict(FastUserDict[KT, VT]):
             for key, value in d.items():
                 self.on_key_set(key, value)
         for key, value in kwargs.items():
-            self.on_key_set(key, value)
+            self.on_key_set(cast(KT, key), value)
         self.data.update(*args, **kwargs)
 
     def clear(self) -> None:

@@ -332,7 +332,7 @@ class Worker(Service):
 
     async def _add_monitor(self) -> Any:
         try:
-            import aiomonitor  # type: ignore
+            import aiomonitor
         except ImportError:
             self.log.warning(
                 "Cannot start console: aiomonitor is not installed"

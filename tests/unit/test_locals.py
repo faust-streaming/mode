@@ -1,4 +1,5 @@
 import abc
+import types
 from collections.abc import (
     AsyncGenerator,
     AsyncIterable,
@@ -11,6 +12,7 @@ from collections.abc import (
     Sequence,
     Set,
 )
+from pathlib import Path
 from unittest.mock import MagicMock, Mock
 
 import pytest
@@ -755,3 +757,66 @@ def test_Proxy_from_source__no_abstractmethods():
     s = Source()
     p = ProxySource(lambda: s)
     assert p._get_current_object() is s
+
+
+class test_Proxy_class_body_bytecode:
+    """Guard `Proxy` against the PyPy `__class__` cell bug.
+
+    `Proxy` defines a `__class__` property.  That is fine so long as the
+    class body has no implicit `__class__` closure cell -- but the compiler
+    adds one as soon as any method in the body so much as *names* `super`
+    (it cannot tell the zero-argument form from the explicit one).
+
+    With that cell present, PyPy -- and only with a trace function
+    installed, i.e. under coverage -- resolves every mention of the name
+    `__class__` in the class body to the cell instead of the class
+    namespace.  Both directions break:
+
+      * reading it (as `@__class__.setter` must) hits the cell while it is
+        still empty, so importing mode.locals raises
+        `NameError: name '__class__' is not defined`;
+      * binding it writes to the cell, so no descriptor is left on the
+        class and every proxy reports itself instead of the object it
+        wraps.
+
+    CPython resolves both to the class namespace either way, so it cannot
+    reproduce any of this -- the compiled class body is the only thing a
+    CPython-only run can check.  `_cooperative_init_subclass` keeps the
+    cell from being created; these tests keep it that way.
+    """
+
+    def _proxy_class_body(self):
+        import mode.locals
+
+        source = Path(mode.locals.__file__).read_text()
+        module_code = compile(source, mode.locals.__file__, "exec")
+
+        def walk(code):
+            for const in code.co_consts:
+                if isinstance(const, types.CodeType):
+                    yield const
+                    yield from walk(const)
+
+        bodies = [c for c in walk(module_code) if c.co_name == "Proxy"]
+        assert len(bodies) == 1, "expected exactly one Proxy class body"
+        return bodies[0]
+
+    def test_class_body_has_no_implicit_class_cell(self):
+        assert "__class__" not in self._proxy_class_body().co_cellvars, (
+            "Proxy's class body has an implicit `__class__` closure cell. "
+            "Something in it names `super` (or reads `__class__`) inside a "
+            "method -- even the explicit `super(Proxy, self)` form is "
+            "enough. That breaks the `__class__` property on PyPy under "
+            "coverage. Route the call through the module-level "
+            "`_cooperative_init_subclass` helper instead."
+        )
+
+    def test_the_property_is_installed_on_the_class(self):
+        # The runtime half of the same invariant, and the one that catches
+        # it on PyPy directly: if `__class__` never lands in the class
+        # namespace, attribute access falls back to `type.__class__` and
+        # the proxy reports itself rather than the object it wraps.
+        assert isinstance(Proxy.__dict__["__class__"], property)
+
+    def test_the_property_still_forwards(self):
+        assert Proxy(lambda: "hello").__class__ is str

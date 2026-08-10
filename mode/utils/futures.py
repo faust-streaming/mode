@@ -1,6 +1,7 @@
 """Async I/O Future utilities."""
 
 import asyncio
+from asyncio import all_tasks, current_task
 from inspect import isawaitable
 from typing import Any, Callable, NoReturn, Optional, Union
 
@@ -8,19 +9,6 @@ from mode.utils.loops import get_event_loop
 
 # These used to be here, now moved to .queues
 from .queues import FlowControlEvent, FlowControlQueue  # noqa: F401
-
-try:  # pragma: no cover
-    from asyncio import all_tasks  # type: ignore
-except ImportError:  # pragma: no cover
-
-    def all_tasks(loop: asyncio.AbstractEventLoop) -> set[asyncio.Task]:
-        return asyncio.Task.all_tasks(loop=loop)
-
-
-try:  # pragma: no cover
-    from asyncio import current_task  # type: ignore
-except ImportError:  # pragma: no cover
-    current_task = asyncio.Task.current_task
 
 __all__ = [
     "all_tasks",

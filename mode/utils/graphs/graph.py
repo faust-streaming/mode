@@ -9,7 +9,7 @@ from collections.abc import (
     Sequence,
 )
 from functools import partial
-from typing import IO, Any, Callable, Optional, cast
+from typing import IO, Any, Callable, Optional
 
 from mode.utils.types.graphs import _T, DependencyGraphT, GraphFormatterT
 
@@ -205,7 +205,7 @@ class DependencyGraph(DependencyGraphT):
         return obj in self.adjacent
 
     def items(self) -> ItemsView:
-        return cast(ItemsView, self.adjacent.items())
+        return self.adjacent.items()
 
     def __repr__(self) -> str:
         return "\n".join(self._repr_node(N) for N in self)

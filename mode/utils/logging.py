@@ -19,7 +19,6 @@ from types import TracebackType
 from typing import (
     IO,
     Any,
-    AnyStr,
     BinaryIO,
     Callable,
     ClassVar,
@@ -320,7 +319,7 @@ class DefaultFormatter(logging.Formatter):
     """Default formatter adds support for extra data."""
 
     def format(self, record: logging.LogRecord) -> str:
-        record.extra = _format_extra(record)  # type: ignore
+        record.extra = _format_extra(record)
         return super().format(record)
 
 
@@ -335,7 +334,7 @@ class ExtensionFormatter(colorlog.TTYColoredFormatter):
 
     def format(self, record: logging.LogRecord) -> str:
         self._format_args(record)
-        record.extra = _format_extra(record)  # type: ignore
+        record.extra = _format_extra(record)
         return cast(str, super().format(record))  # type: ignore
 
     def _format_args(self, record: logging.LogRecord) -> None:
@@ -348,9 +347,7 @@ class ExtensionFormatter(colorlog.TTYColoredFormatter):
         else:
             if not isinstance(record.args, tuple):
                 # logger.log(severity, "msg %s", foo)
-                # mypy thinks this is unreachable as record is
-                # always Tuple
-                record.args = (record.args,)  # type: ignore
+                record.args = (record.args,)
             # logger.log(severity, "msg %s", ('foo',))
             record.args = tuple(format_arg(arg, record) for arg in record.args)
 
@@ -374,9 +371,9 @@ class ExtensionFormatter(colorlog.TTYColoredFormatter):
 
 
 @singledispatch
-def level_name(loglevel: int) -> str:
+def level_name(loglevel: Severity) -> str:
     """Convert log level to number."""
-    return cast(str, logging.getLevelName(loglevel))
+    return logging.getLevelName(loglevel)
 
 
 @level_name.register(str)
@@ -385,14 +382,21 @@ def _when_str(loglevel: str) -> str:
 
 
 @singledispatch
-def level_number(loglevel: int) -> int:
+def level_number(loglevel: Optional[Severity]) -> int:
     """Convert log level number to name."""
-    return loglevel
+    # `str` has a registered implementation below, so the fallback only
+    # ever sees numbers (or `None`, which is passed through unchanged).
+    # The parameter is annotated with the full union because
+    # `functools.singledispatch` requires the registered types to be
+    # subtypes of the fallback implementation's first argument.
+    return cast(int, loglevel)
 
 
 @level_number.register(str)
 def _(loglevel: str) -> int:
-    return logging.getLevelName(loglevel.upper())  # type: ignore
+    # `getLevelName` is typed as returning `str`, but returns the level
+    # number when given a level name.
+    return cast(int, logging.getLevelName(loglevel.upper()))
 
 
 def setup_logging(
@@ -554,6 +558,7 @@ def cry(
     sep2 = sep2 * seplen if len(sep2) == 1 else sep2
     sep3 = sep3 * seplen if len(sep3) == 1 else sep3
 
+    loop: Optional[asyncio.AbstractEventLoop]
     for tid, frame in sys._current_frames().items():
         thread = tmap.get(tid)
         if thread:
@@ -868,7 +873,7 @@ class FileLogProxy(TextIO):
 
         handler.handleError = WithSafeHandleError().handleError  # type: ignore
 
-    def write(self, s: AnyStr) -> int:
+    def write(self, s: str) -> int:
         if not getattr(self._threadlocal, "recurse_protection", False):
             data = s.strip()
             if data and not self.closed:
@@ -895,6 +900,7 @@ class FileLogProxy(TextIO):
     def errors(self) -> Optional[str]:
         return None
 
+    @property
     def line_buffering(self) -> bool:
         return False
 
@@ -925,16 +931,16 @@ class FileLogProxy(TextIO):
     def isatty(self) -> bool:
         return False
 
-    def read(self, n: int = -1) -> AnyStr:
+    def read(self, n: int = -1) -> str:
         raise NotImplementedError()
 
     def readable(self) -> bool:
         return False
 
-    def readline(self, limit: int = -1) -> AnyStr:
+    def readline(self, limit: int = -1) -> str:
         raise NotImplementedError()
 
-    def readlines(self, hint: int = -1) -> list[AnyStr]:
+    def readlines(self, hint: int = -1) -> list[str]:
         raise NotImplementedError()
 
     def seek(self, offset: int, whence: int = 0) -> int:
@@ -966,7 +972,7 @@ class FileLogProxy(TextIO):
         exc_type: Optional[type[BaseException]] = None,
         exc_val: Optional[BaseException] = None,
         exc_tb: Optional[TracebackType] = None,
-    ) -> Optional[bool]: ...
+    ) -> None: ...
 
 
 @contextmanager
