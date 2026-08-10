@@ -439,7 +439,7 @@ class ProxyItemsView(ItemsView):
         yield from self._mapping._items()
 
 
-class LRUCache(FastUserDict, MutableMapping[KT, VT], MappingViewProxy):
+class LRUCache(FastUserDict[KT, VT], MutableMapping[KT, VT], MappingViewProxy):
     """LRU Cache implementation using a doubly linked list to track access.
 
     Arguments:
@@ -456,20 +456,15 @@ class LRUCache(FastUserDict, MutableMapping[KT, VT], MappingViewProxy):
 
     Note:
         The backing store is an :class:`~collections.OrderedDict` rather
-        than a plain :class:`dict`, even though `dict` has preserved
-        insertion order since Python 3.7.  The reason is
-        `popitem(last=False)`: evicting the oldest entry is this class's
-        hot path, and `OrderedDict` does it in O(1) via its linked list,
-        while the `dict` equivalent (`d.pop(next(iter(d)))`) has to scan
-        past every slot vacated since the last resize.  Measured on a
-        steady-state evict-and-insert loop, `dict` was ~3x slower at 1,000
-        entries and ~110x slower at 100,000.
-
-        The cost of that linked list is that `OrderedDict` is not safe to
-        mutate concurrently on free-threaded builds -- racing threads
-        corrupt it badly enough to segfault the interpreter, where `dict`
-        would merely raise.  So on those builds the mutex is mandatory
-        rather than merely on by default.
+        than a plain :class:`dict`: evicting the oldest entry is this
+        class's hot path, and ``popitem(last=False)`` does it in O(1) via
+        the linked list, where the ``dict`` equivalent degrades badly as
+        the cache grows (measured in ``docs/free-threading.md``).  The
+        cost of that linked list is that `OrderedDict` is not safe to
+        mutate concurrently on free-threaded builds -- racing threads can
+        corrupt it badly enough to segfault the interpreter -- so on
+        those builds the mutex is mandatory rather than merely on by
+        default.
     """
 
     limit: Optional[int]
@@ -504,8 +499,14 @@ class LRUCache(FastUserDict, MutableMapping[KT, VT], MappingViewProxy):
 
     def __getitem__(self, key: KT) -> VT:
         with self._mutex:
-            value = self[key] = self.data.pop(key)
-            return cast(VT, value)
+            return self._touch(key)
+
+    def _touch(self, key: KT) -> VT:
+        # Caller must hold the mutex.  Pop and re-insert to mark the key
+        # most recently used.
+        value = self.data.pop(key)
+        self.data[key] = value
+        return cast(VT, value)
 
     def update(self, *args: Any, **kwargs: Any) -> None:
         with self._mutex:
@@ -521,45 +522,32 @@ class LRUCache(FastUserDict, MutableMapping[KT, VT], MappingViewProxy):
             return self.data.popitem(last)
 
     def __setitem__(self, key: KT, value: VT) -> None:
-        # remove least recently used key.
         with self._mutex:
-            # NOTE: `key not in self.data` matters.  Updating a key that is
-            # already present does not grow the cache, so evicting to make
-            # room for it discards an unrelated entry for nothing -- a full
-            # cache would shrink below its own limit on every such update
-            # (limit=3 holding a/b/c, then `cache["c"] = ...`, used to leave
-            # two entries and drop "a").
-            if (
-                key not in self.data
-                and self.limit
-                and len(self.data) >= self.limit
-            ):
-                # popitem(last=False) drops the oldest entry, same as the
-                # historical `pop(next(iter(data)))` -- but in one call
-                # instead of three.  Under the mutex they are equivalent;
-                # this matters for a cache shared between threads *without*
-                # the mutex, which GIL builds still permit (and default
-                # to).  There a switch between `iter` and `next` while
-                # another thread inserts raises "OrderedDict mutated
-                # during iteration", and two threads resolving the same
-                # oldest key makes the loser's `pop` raise KeyError.  On
-                # CPython the single call is atomic (PyPy's popitem is
-                # Python-level, so it is not); and the check-then-act
-                # around it still races unlocked -- over-eviction, or a
-                # KeyError from `popitem` when another thread empties the
-                # cache first.  A narrower window, not thread safety:
-                # that remains the mutex's job.
-                self.data.popitem(last=False)
-            self.data[key] = value
+            self._store(key, value)
 
-    # NOTE: Iteration takes a snapshot under the mutex and yields from that
-    # snapshot with the mutex released, rather than holding it across the
-    # yields.  Holding a lock across a yield keeps it held for as long as
-    # the *consumer* takes to iterate -- and forever if the consumer
-    # abandons the generator half way, since the mutex is only released
-    # when the generator is closed.  Snapshotting also means a concurrent
-    # writer cannot invalidate an iteration already in progress, which is
-    # what "dictionary changed size during iteration" used to be.
+    def _store(self, key: KT, value: VT) -> None:
+        # Caller must hold the mutex.  Evict the least recently used
+        # entry when inserting a *new* key into a full cache -- updating
+        # an existing key does not grow the cache, so evicting for it
+        # would shrink a full cache on every such update.  The cheap size
+        # checks run first so unlimited and under-limit caches skip the
+        # containment probe.  Eviction is a single `popitem(last=False)`
+        # call, NOT `pop(next(iter(...)))`, so that even an unlocked
+        # cache on a GIL build (the historical default there) cannot race
+        # the iter/next/pop gaps; docs/free-threading.md has the story.
+        if (
+            self.limit
+            and len(self.data) >= self.limit
+            and key not in self.data
+        ):
+            self.data.popitem(last=False)
+        self.data[key] = value
+
+    # NOTE: Iteration operates on a `copy()` snapshot taken under the
+    # mutex, iterated with the mutex released.  Holding the lock across
+    # yields would keep it held for as long as the *consumer* takes --
+    # forever, if a generator is abandoned half-consumed -- and iterating
+    # the live dict is what "changed size during iteration" used to be.
 
     def __iter__(self) -> Iterator:
         return self._keys()
@@ -568,33 +556,26 @@ class LRUCache(FastUserDict, MutableMapping[KT, VT], MappingViewProxy):
         return ProxyKeysView(self)
 
     def _keys(self) -> Iterator[KT]:
-        # userdict.keys in py3k calls __getitem__
-        with self._mutex:
-            keys = list(self.data)
-        yield from keys
+        return iter(self.copy())
 
     def values(self) -> ValuesView[VT]:
         return ProxyValuesView(self)
 
     def _values(self) -> Iterator[VT]:
-        with self._mutex:
-            values = list(self.data.values())
-        yield from values
+        return iter(self.copy().values())
 
     def items(self) -> ItemsView[KT, VT]:
         return ProxyItemsView(self)
 
     def _items(self) -> Iterator[tuple[KT, VT]]:
-        with self._mutex:
-            items = list(self.data.items())
-        yield from items
+        return iter(self.copy().items())
 
     def incr(self, key: KT, delta: int = 1) -> int:
         with self._mutex:
             # this acts as memcached does- store as a string, but return a
             # integer as long as it exists and we can cast it
             newval = int(self.data.pop(key)) + delta
-            self[key] = cast(VT, str(newval))
+            self._store(key, cast(VT, str(newval)))
             return newval
 
     # NOTE: Everything below re-implements an inherited method that would
@@ -631,12 +612,13 @@ class LRUCache(FastUserDict, MutableMapping[KT, VT], MappingViewProxy):
         with self._mutex:
             self.data.clear()
 
-    # The compound `MutableMapping` helpers below are inherited as
-    # combinations of the primitives above.  Each primitive is locked, so
-    # inheriting them would already be memory-safe, but the lock is
-    # dropped between the lookup and the store -- which for a class that
-    # advertises thread safety is a surprising place to lose an
-    # invariant.  They are made atomic instead.
+    # `pop` and `setdefault` below are inherited as combinations of the
+    # locked primitives above, which is already memory-safe -- but the
+    # lock is dropped between the lookup and the store, a surprising
+    # place for a class that advertises thread safety to lose an
+    # invariant.  They are made atomic instead.  (`get` needs no
+    # override: its only data access is the single, already-locked
+    # `self[key]`.)
 
     @overload
     def pop(self, key: KT) -> VT: ...
@@ -653,29 +635,12 @@ class LRUCache(FastUserDict, MutableMapping[KT, VT], MappingViewProxy):
                     raise
                 return default
 
-    # NOTE: Not overloaded like `pop` and `get` above.  `LRUCache` lists
-    # `FastUserDict` unparameterized among its bases, so the inherited
-    # `setdefault` erases to `(Any, None = ...) -> Any | None`, and a
-    # narrower `(KT, VT) -> VT` pair here is an incompatible override.
     def setdefault(self, key: KT, default: Any = None) -> Any:
         with self._mutex:
             try:
-                return self[key]
+                return self._touch(key)
             except KeyError:
-                self[key] = cast(VT, default)
-                return default
-
-    @overload
-    def get(self, key: KT) -> Optional[VT]: ...
-
-    @overload
-    def get(self, key: KT, default: Union[VT, T]) -> Union[VT, T]: ...
-
-    def get(self, key: KT, default: Any = None) -> Any:
-        with self._mutex:
-            try:
-                return self[key]
-            except KeyError:
+                self._store(key, cast(VT, default))
                 return default
 
     def _new_lock(self) -> AbstractContextManager:
@@ -696,7 +661,6 @@ class LRUCache(FastUserDict, MutableMapping[KT, VT], MappingViewProxy):
         # both the default and legal -- would otherwise come back here
         # with `nullcontext` for a mutex.  Upgrading the flag keeps those
         # pickles loadable, which raising would not.
-        state = dict(state)
         if FREE_THREADED and not state.get("thread_safety", False):
             state["thread_safety"] = True
         self.__dict__ = state

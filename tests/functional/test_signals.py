@@ -248,6 +248,13 @@ class test_BaseSignal:
         assert sig._create_ref(X().foo)
 
 
+@pytest.fixture
+def handler():
+    async def handler(*args: Any, **kwargs: Any) -> None: ...
+
+    return handler
+
+
 class test_disconnect_removes_the_receiver:
     """`disconnect` has to undo `connect`, strong references included.
 
@@ -256,12 +263,6 @@ class test_disconnect_removes_the_receiver:
     compare equal, so the `discard` matched nothing and the handler stayed
     connected -- and stayed subscribed to every subsequent send.
     """
-
-    @pytest.fixture
-    def handler(self):
-        async def handler(*args: Any, **kwargs: Any) -> None: ...
-
-        return handler
 
     def test_strong_receiver(self, handler):
         sig = Signal()
@@ -358,24 +359,15 @@ class test_strong_receivers_are_stored_unwrapped:
     thread mutate the set underneath it.
     """
 
-    def test_the_set_holds_the_handler(self):
-        async def fun(*args: Any, **kwargs: Any) -> None: ...
-
-        sig = Signal()
-        sig.connect(fun)
-        assert set(sig._receivers) == {fun}
-
-    def test_the_stored_receiver_is_not_a_callable_wrapper(self):
+    def test_the_stored_receiver_is_the_handler_itself(self, handler):
         # `_is_alive` distinguishes weak from strong by asking whether the
         # entry is a `weakref`, so a strong entry must be the handler and
         # not something that returns it when called.
-        async def fun(*args: Any, **kwargs: Any) -> None: ...
-
         sig = Signal()
-        sig.connect(fun)
+        sig.connect(handler)
         (stored,) = sig._receivers
-        assert stored is fun
-        assert sig._is_alive(stored) == (True, fun)
+        assert stored is handler
+        assert sig._is_alive(stored) == (True, handler)
 
     def test_weak_and_strong_receivers_coexist(self):
         async def strong(*args: Any, **kwargs: Any) -> None: ...
@@ -387,13 +379,11 @@ class test_strong_receivers_are_stored_unwrapped:
         sig.connect(weak, weak=True)
         assert set(sig.iter_receivers(object())) == {strong, weak}
 
-    def test_hashing_is_not_implemented_in_python(self):
+    def test_hashing_is_not_implemented_in_python(self, handler):
         # The point of storing the handler bare: `set.add`/`set.discard`
         # must not call back into Python to hash or compare an entry.
-        async def fun(*args: Any, **kwargs: Any) -> None: ...
-
         sig = Signal()
-        sig.connect(fun)
+        sig.connect(handler)
         (stored,) = sig._receivers
         assert type(stored).__hash__ is object.__hash__
         assert type(stored).__eq__ is object.__eq__

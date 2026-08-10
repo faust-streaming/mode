@@ -113,20 +113,13 @@ class BaseSignal(BaseSignalT[T]):
         self, fun: SignalHandlerT, *, weak: bool = False, sender: Any = None
     ) -> SignalHandlerT:
         ref: SignalHandlerRefT
-        # NOTE: A strong receiver is stored as the handler itself, not
-        # wrapped in anything.  `disconnect` needs to find the stored
-        # entry by value, and a handler already hashes and compares the
-        # way that requires: functions by identity, and bound methods by
-        # ``(__func__, __self__)`` -- so ``owner.handler``, a fresh object
-        # on every attribute access, still matches the one connect stored.
-        #
-        # Just as important, both of those comparisons are implemented in
-        # the interpreter rather than in Python.  A wrapper defining
-        # ``__eq__``/``__hash__`` in Python would make every ``add`` and
-        # ``discard`` below re-enter the interpreter mid-operation, which
-        # releases the GIL and lets another thread mutate this set while
-        # the lookup that called us is walking it.  On PyPy that
-        # reliably wedges a concurrent connect/disconnect loop.
+        # NOTE: A strong receiver is stored as the handler itself,
+        # unwrapped.  Handlers already hash and compare the way
+        # `disconnect` needs (functions by identity, bound methods by
+        # ``(__func__, __self__)``), and keeping Python-level
+        # __hash__/__eq__ out of the receiver set keeps `set.add` and
+        # `set.discard` atomic -- a wrapper re-entering the interpreter
+        # mid-operation reliably wedged PyPy; see docs/free-threading.md.
         ref = self._create_ref(fun) if weak else fun
         if self.default_sender is not None:
             sender = self.default_sender
@@ -141,11 +134,9 @@ class BaseSignal(BaseSignalT[T]):
     ) -> None:
         ref: SignalHandlerRefT
         # Mirrors `_connect`: a strong receiver is the handler itself, so
-        # the value built here compares equal to the one stored there.
-        # This used to be ``lambda: fun``, and `_connect` stored a
-        # *different* lambda -- two lambdas are never equal, so the
-        # `discard` below matched nothing and the receiver stayed
-        # connected forever.
+        # the value built here compares equal to the stored entry.  (It
+        # was once a fresh ``lambda: fun``, which never matched -- making
+        # disconnect a silent no-op for strong receivers.)
         ref = self._create_ref(fun) if weak else fun
         if self.default_sender is not None:
             sender = self.default_sender
