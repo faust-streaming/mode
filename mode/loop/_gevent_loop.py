@@ -1,6 +1,7 @@
 """Gevent loop customizations."""
 
-from typing import Any
+import asyncio
+from typing import Any, Optional
 
 import gevent.core
 
@@ -10,7 +11,7 @@ from mode.utils.loops import get_event_loop
 class Loop(gevent.core.loop):  # type: ignore
     """Gevent core event loop modifed to support `asyncio`."""
 
-    _aioloop_loop = None
+    _aioloop_loop: Optional[asyncio.AbstractEventLoop] = None
 
     def run_callback(self, *args: Any, **kwargs: Any) -> None:
         if self._aioloop_loop is None:

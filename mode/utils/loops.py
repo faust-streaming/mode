@@ -28,7 +28,7 @@ def get_event_loop() -> asyncio.AbstractEventLoop:
     Mode accesses ``Service.loop`` (and other helpers) outside of a running
     loop -- e.g. at import time, when agents/services are declared at module
     level -- so it needs the historical "get or create" semantics.  This
-    restores them in a way that works across Python 3.9-3.14.
+    restores them in a way that works across Python 3.10-3.14.
 
     Whether a loop is currently *running* can change on every call (that's
     the whole point of an event loop), so :func:`asyncio.get_running_loop`
@@ -103,9 +103,7 @@ def call_asap(
     if _is_unix_loop(loop):
         return _call_asap(loop, callback, *args, context=context)
     if context is not None:
-        return loop.call_soon_threadsafe(  # type: ignore
-            callback, *args, context=context
-        )
+        return loop.call_soon_threadsafe(callback, *args, context=context)
     return loop.call_soon_threadsafe(callback, *args)
 
 
@@ -117,7 +115,7 @@ def _call_asap(
         loop._check_callback(callback, "call_soon_threadsafe")
     loop._call_soon(callback, args, context)
     if context is not None:
-        handle = asyncio.Handle(callback, list(args), loop, context)  # type: ignore
+        handle = asyncio.Handle(callback, list(args), loop, context)
     else:
         handle = asyncio.Handle(callback, list(args), loop)
     if handle._source_traceback:  # type: ignore

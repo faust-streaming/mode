@@ -1,7 +1,6 @@
 import abc
 import collections.abc
 import pickle
-import sys
 import typing
 from collections.abc import Mapping, MutableMapping, MutableSet, Sequence, Set
 from typing import ClassVar, Optional, Union
@@ -419,10 +418,8 @@ IS_UNION_CASES = [
     (int, False),
     (Union[int, bytes], True),
     (Optional[str], True),
+    (int | None, True),
 ]
-if sys.version_info >= (3, 10):
-    # X | Y syntax is only usable at runtime on Python 3.10+
-    IS_UNION_CASES.append((int | None, True))
 
 
 @pytest.mark.parametrize("input,expected", IS_UNION_CASES)

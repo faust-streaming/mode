@@ -39,6 +39,7 @@ nav:
       - Web app: example-webapp.md
     - Developing:
       - Contributing Guide: contributing.md
+      - Free-threaded Python: free-threading.md
   - References:
     - 'Mode':
       - mode.services: references/mode.services.md

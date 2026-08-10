@@ -4,7 +4,15 @@ import asyncio
 import math
 import typing
 from collections import deque
-from typing import Any, Callable, Optional, TypeVar, cast, no_type_check
+from typing import (
+    Any,
+    Callable,
+    Generic,
+    Optional,
+    TypeVar,
+    cast,
+    no_type_check,
+)
 from weakref import WeakSet
 
 from .locks import Event
@@ -61,7 +69,8 @@ class FlowControlEvent:
 
     if typing.TYPE_CHECKING:
         _queues: WeakSet["FlowControlQueue"]
-    _queues = None
+    else:
+        _queues = None
 
     def __init__(
         self,
@@ -104,7 +113,7 @@ class FlowControlEvent:
             await self._resume.wait()
 
 
-class FlowControlQueue(asyncio.Queue):
+class FlowControlQueue(asyncio.Queue, Generic[_T]):
     """`asyncio.Queue` managed by `FlowControlEvent`.
 
     See Also:
@@ -211,7 +220,7 @@ class FlowControlQueue(asyncio.Queue):
         return math.floor(self.maxsize * self.pressure_drop_ratio)
 
 
-class ThrowableQueue(FlowControlQueue):
+class ThrowableQueue(FlowControlQueue[_T]):
     """Queue that can be notified of errors."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -238,7 +247,7 @@ class ThrowableQueue(FlowControlQueue):
     def get_nowait(self) -> _T:
         if self._errors:
             raise self._errors.popleft()
-        return cast(_T, super().get_nowait())
+        return super().get_nowait()
 
     async def throw(self, exc: BaseException) -> None:
         self._throw(exc)

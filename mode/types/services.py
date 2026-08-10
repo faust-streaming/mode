@@ -135,6 +135,7 @@ class ServiceT(AbstractAsyncContextManager):
     def shortlabel(self) -> str: ...
 
     @property
+    @abc.abstractmethod
     def beacon(self) -> NodeT: ...
 
     @beacon.setter

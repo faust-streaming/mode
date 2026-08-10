@@ -7,7 +7,7 @@ import unittest.mock
 from collections.abc import Iterator
 from contextlib import contextmanager
 from types import ModuleType
-from typing import Any, cast
+from typing import Any
 from unittest.mock import MagicMock
 
 __all__ = ["IN", "call", "mask_module", "patch_module"]
@@ -95,7 +95,7 @@ def mask_module(*modnames: str) -> Iterator:
         if name in modnames:
             raise ImportError(f"No module named {name}")
         else:
-            return cast(ModuleType, realimport(name, *args, **kwargs))
+            return realimport(name, *args, **kwargs)
 
     builtins.__import__ = myimp
     try:
