@@ -197,6 +197,35 @@ class test_LRUCache_thread_safety:
             c[i] = i
         assert list(c.keys()) == [7, 8, 9]
 
+    def test_eviction_does_not_iterate_the_data(self):
+        # Eviction must be `popitem(last=False)` -- one call -- and not
+        # the historical `pop(next(iter(data)))`.  An *unlocked* cache on
+        # a GIL build (the historical default there) races the latter's
+        # iter/next/pop gaps: a switch between `iter` and `next` while
+        # another thread inserts raises "OrderedDict mutated during
+        # iteration", and two threads resolving the same oldest key make
+        # the loser's `pop` raise KeyError.  A stress test cannot tell
+        # the two forms apart on a locked cache, so assert the mechanism
+        # itself, by recording `__iter__` calls on the backing dict.
+        # Recording, not raising: whether *other* operations -- the
+        # views, `dict()` -- route through `__iter__` varies between
+        # OrderedDict implementations (C, pure-Python, PyPy), and only
+        # iteration *during the fill* is the defect.  `popitem` itself
+        # iterates on none of them.
+        iterations = []
+
+        class RecordingData(OrderedDict):
+            def __iter__(self):
+                iterations.append(True)
+                return super().__iter__()
+
+        c = LRUCache(limit=3)
+        c.data = RecordingData()
+        for i in range(10):
+            c[i] = i
+        assert not iterations, "eviction iterated the backing dict"
+        assert list(c.data.keys()) == [7, 8, 9]
+
     def test_iteration_does_not_hold_the_lock_across_yields(self):
         # A half-consumed iterator must not keep the mutex held: the lock
         # is reentrant, so only a *different* thread shows the problem.
@@ -221,10 +250,16 @@ class test_LRUCache_thread_safety:
         assert c["d"] == 4
 
     def test_concurrent_mutation_and_iteration(self):
-        # Deliberately the *default* configuration -- which on a
-        # free-threaded build now means the mutex is on.  This is the
-        # workload that used to segfault the interpreter.
-        c = LRUCache(limit=50)
+        # thread_safety=True explicitly, NOT the default.  On a
+        # free-threaded build they are the same configuration -- the
+        # default resolves to True there, which has its own test above --
+        # so this still hammers the exact setup that used to segfault the
+        # interpreter.  On a GIL build the default is *deliberately*
+        # unlocked, and racing that asserts nothing the class promises:
+        # the eviction in `__setitem__` is a check-then-act that a GIL
+        # switch can split, which surfaced in CI as a one-in-many-runs
+        # "OrderedDict mutated during iteration".
+        c = LRUCache(limit=50, thread_safety=True)
 
         def work(i):
             for n in range(200):
@@ -239,7 +274,9 @@ class test_LRUCache_thread_safety:
         # The test above only drives the methods LRUCache defines itself.
         # Every other mapping operation used to be inherited straight from
         # FastUserDict, reaching self.data with the mutex released.
-        c = LRUCache(limit=50)
+        # thread_safety=True for the same reason as above: the locked
+        # configuration is the one that promises this workload is safe.
+        c = LRUCache(limit=50, thread_safety=True)
 
         def work(i):
             for n in range(200):

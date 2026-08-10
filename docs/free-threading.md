@@ -120,6 +120,30 @@ corrupts its internal linked list.
   with a `nullcontext` for a mutex, exactly the configuration `__init__`
   refuses. It now upgrades `thread_safety` to `True` instead, which keeps
   old pickles loadable where raising would not.
+- Evicting with `popitem(last=False)` instead of the historical
+  `pop(next(iter(data)))`. Under the mutex they are equivalent (and it is
+  the very operation the table below keeps `OrderedDict` for), but GIL
+  builds still permit — and default to — sharing an *unlocked* cache, and
+  there the three-call form races: a switch between `iter` and `next`
+  while another thread inserts raises "OrderedDict mutated during
+  iteration", and two threads resolving the same oldest key make the
+  loser's `pop` raise `KeyError`. CI caught the first flavor on a stock
+  3.13 run; at a 1µs switch interval it reproduces in almost every trial,
+  and the single-call form takes both windows away on CPython, where the
+  C `popitem` is atomic under the GIL (PyPy's is Python-level and can
+  itself raise mid-iteration unlocked — the mutex is the only fix
+  there). This narrows the
+  unlocked race, it does not close it: the check-then-act around the call
+  can still over-evict, and `popitem` still raises `KeyError` if another
+  thread empties the cache between the check and the call. Thread safety
+  remains the mutex's job — which is why the concurrency tests hammer
+  `thread_safety=True` explicitly rather than the default: on
+  free-threaded builds that is the same configuration the default
+  resolves to, and on GIL builds the unlocked default makes no promise
+  under concurrent mutation for a test to assert. The eviction mechanism
+  itself has a deterministic guard
+  (`test_eviction_does_not_iterate_the_data`), since on a locked cache no
+  stress test can tell the two forms apart.
 
 ### Why not just swap `OrderedDict` for `dict`?
 

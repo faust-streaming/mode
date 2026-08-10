@@ -534,7 +534,22 @@ class LRUCache(FastUserDict, MutableMapping[KT, VT], MappingViewProxy):
                 and self.limit
                 and len(self.data) >= self.limit
             ):
-                self.data.pop(next(iter(self.data)))
+                # popitem(last=False) drops the oldest entry, same as the
+                # historical `pop(next(iter(data)))` -- but in one call
+                # instead of three.  Under the mutex they are equivalent;
+                # this matters for a cache shared between threads *without*
+                # the mutex, which GIL builds still permit (and default
+                # to).  There a switch between `iter` and `next` while
+                # another thread inserts raises "OrderedDict mutated
+                # during iteration", and two threads resolving the same
+                # oldest key makes the loser's `pop` raise KeyError.  On
+                # CPython the single call is atomic (PyPy's popitem is
+                # Python-level, so it is not); and the check-then-act
+                # around it still races unlocked -- over-eviction, or a
+                # KeyError from `popitem` when another thread empties the
+                # cache first.  A narrower window, not thread safety:
+                # that remains the mutex's job.
+                self.data.popitem(last=False)
             self.data[key] = value
 
     # NOTE: Iteration takes a snapshot under the mutex and yields from that
