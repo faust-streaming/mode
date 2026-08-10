@@ -236,10 +236,16 @@ def check_service_proxy(trials=200):
 # with list() now (NOT tuple(), which does not lock the source set).
 #
 # The disconnect half of that race only became real once strong receivers
-# were stored as _StrongRef: they used to be `lambda: fun`, and disconnect
-# built a second lambda that could never compare equal, so the receiver set
-# grew monotonically and was never actually mutated by disconnect().  The
-# leftover count below is asserted, not just the absence of exceptions.
+# were stored as the handler itself: they used to be `lambda: fun`, and
+# disconnect built a second lambda that could never compare equal, so the
+# receiver set grew monotonically and was never actually mutated by
+# disconnect().  The leftover count below is asserted, not just the
+# absence of exceptions.
+#
+# Storing them bare also keeps hashing and comparison in the interpreter.
+# A wrapper defining __eq__/__hash__ in Python makes set.add/set.discard
+# re-enter the interpreter mid-operation, releasing the GIL while the set
+# is being walked; that wedges this loop outright on PyPy.
 # --------------------------------------------------------------------------
 def check_signal(trials=30):
     from mode.signals import Signal

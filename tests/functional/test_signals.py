@@ -5,7 +5,7 @@ from weakref import ref
 import pytest
 
 from mode import label
-from mode.signals import Signal, SignalT, SyncSignal, SyncSignalT, _StrongRef
+from mode.signals import Signal, SignalT, SyncSignal, SyncSignalT
 
 
 class X:
@@ -178,13 +178,15 @@ class test_BaseSignal:
         sig3 = super(type(sig2), sig2).clone()
         assert sig3.asdict() == sig2.asdict()
 
-    def test_disconnect_lambda(self, sig):
+    def test_disconnect_discards_the_handler_itself(self, sig):
+        # A strong receiver is stored unwrapped, so the value handed to
+        # `discard` is the handler.  It used to be a freshly built
+        # ``lambda: fun``, which could never equal the one `connect`
+        # stored, so the discard matched nothing.
         sig._receivers = Mock()
         r = Mock()
         sig.disconnect(r, sender=None)
-        sig._receivers.discard.assert_called_once()
-        lmbda = sig._receivers.discard.call_args[0][0]
-        assert lmbda() == r
+        sig._receivers.discard.assert_called_once_with(r)
 
     def test_disconnect_raises(self, sig):
         sig._create_id = Mock(side_effect=ValueError())
@@ -229,7 +231,12 @@ class test_BaseSignal:
 
         x = Object()
         x.value = 10
-        assert sig._is_alive(lambda: 42) == (True, 42)
+
+        async def handler(*args, **kwargs): ...
+
+        # Not a weakref -- a strong receiver, stored as the handler
+        # itself, so it is returned as-is rather than called.
+        assert sig._is_alive(handler) == (True, handler)
         assert sig._is_alive(ref(x)) == (True, x)
 
     def test_create_ref_methods(self, sig):
@@ -299,7 +306,7 @@ class test_disconnect_removes_the_receiver:
         sig.connect(other)
 
         sig.disconnect(handler)
-        assert {r() for r in sig._receivers} == {other}
+        assert set(sig._receivers) == {other}
 
     def test_disconnected_receiver_stops_being_iterated(self, handler):
         sender = object()
@@ -340,53 +347,69 @@ class test_disconnect_removes_the_receiver:
         assert not x.on_started._filter_receivers[x.on_started._create_id(x)]
 
 
-class test_StrongRef:
-    def test_calling_it_returns_the_handler(self):
-        def fun(): ...
+class test_strong_receivers_are_stored_unwrapped:
+    """A ``weak=False`` receiver is kept in the set as the handler itself.
 
-        assert _StrongRef(fun)() is fun
+    Nothing wraps it.  That is what lets `disconnect` find it -- functions
+    hash and compare by identity, bound methods by
+    ``(__func__, __self__)`` -- and it keeps every `set` operation on the
+    receiver set free of Python-level ``__hash__``/``__eq__``, which would
+    otherwise re-enter the interpreter mid-operation and let another
+    thread mutate the set underneath it.
+    """
 
-    def test_equal_and_hashes_alike_for_the_same_handler(self):
-        def fun(): ...
-
-        assert _StrongRef(fun) == _StrongRef(fun)
-        assert hash(_StrongRef(fun)) == hash(_StrongRef(fun))
-        assert len({_StrongRef(fun), _StrongRef(fun)}) == 1
-
-    def test_differs_from_a_ref_to_another_handler(self):
-        def fun(): ...
-
-        def other(): ...
-
-        assert _StrongRef(fun) != _StrongRef(other)
-
-    def test_never_equal_to_a_plain_callable(self):
-        # Weak receivers live in the same set, so comparisons against
-        # something that is not a _StrongRef have to defer rather than
-        # claim equality.
-        def fun(): ...
-
-        assert _StrongRef(fun).__eq__(fun) is NotImplemented
-        assert _StrongRef(fun) != fun
-
-    def test_unhashable_handler_falls_back_to_identity(self):
-        class Unhashable:
-            __hash__ = None  # type: ignore[assignment]
-
-            def __call__(self): ...
-
-        fun = Unhashable()
-        with pytest.raises(TypeError):
-            hash(fun)
-        # The old `lambda: fun` hashed by identity, so connecting one of
-        # these has to keep working.
-        assert hash(_StrongRef(fun)) == id(fun)
+    def test_the_set_holds_the_handler(self):
+        async def fun(*args: Any, **kwargs: Any) -> None: ...
 
         sig = Signal()
         sig.connect(fun)
-        assert len(sig._receivers) == 1
+        assert set(sig._receivers) == {fun}
 
-    def test_repr_names_the_handler(self):
-        def fun(): ...
+    def test_the_stored_receiver_is_not_a_callable_wrapper(self):
+        # `_is_alive` distinguishes weak from strong by asking whether the
+        # entry is a `weakref`, so a strong entry must be the handler and
+        # not something that returns it when called.
+        async def fun(*args: Any, **kwargs: Any) -> None: ...
 
-        assert "fun" in repr(_StrongRef(fun))
+        sig = Signal()
+        sig.connect(fun)
+        (stored,) = sig._receivers
+        assert stored is fun
+        assert sig._is_alive(stored) == (True, fun)
+
+    def test_weak_and_strong_receivers_coexist(self):
+        async def strong(*args: Any, **kwargs: Any) -> None: ...
+
+        async def weak(*args: Any, **kwargs: Any) -> None: ...
+
+        sig = Signal()
+        sig.connect(strong)
+        sig.connect(weak, weak=True)
+        assert set(sig.iter_receivers(object())) == {strong, weak}
+
+    def test_hashing_is_not_implemented_in_python(self):
+        # The point of storing the handler bare: `set.add`/`set.discard`
+        # must not call back into Python to hash or compare an entry.
+        async def fun(*args: Any, **kwargs: Any) -> None: ...
+
+        sig = Signal()
+        sig.connect(fun)
+        (stored,) = sig._receivers
+        assert type(stored).__hash__ is object.__hash__
+        assert type(stored).__eq__ is object.__eq__
+
+    def test_unhashable_handler_is_rejected_at_connect(self):
+        # A handler that cannot be hashed cannot go in the receiver set.
+        # It never worked: `lambda: fun` let `connect` succeed, and then
+        # the first `send` blew up in `_get_live_receivers`, which
+        # collects the dereferenced handlers into a set of their own.
+        # Failing at registration points at the handler instead.
+        class Unhashable:
+            __hash__ = None  # type: ignore[assignment]
+
+            async def __call__(self, *args: Any, **kwargs: Any) -> None: ...
+
+        sig = Signal()
+        with pytest.raises(TypeError):
+            sig.connect(Unhashable())
+        assert not sig._receivers
