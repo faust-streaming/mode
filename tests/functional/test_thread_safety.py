@@ -25,24 +25,62 @@ from mode.signals import Signal
 from mode.utils.collections import FREE_THREADED, LRUCache
 from mode.utils.objects import cached_property
 
+#: Upper bound for any one concurrency test below.  Generous: these
+#: finish in well under a second when they are healthy, and the point of
+#: the bound is only to keep a wedged thread from waiting forever.
+RACE_TIMEOUT = 60.0
+
+
+def race(work, nthreads=8, timeout=RACE_TIMEOUT):
+    """Run ``work(i)`` in `nthreads` threads released together.
+
+    Returns the exceptions the workers raised, for the caller to assert
+    on.  A worker still running after `timeout` fails the test here.
+
+    Every wait is bounded on purpose.  The defects these tests cover
+    show up as a thread that stops making progress, and an unbounded
+    `threading.Barrier.wait` or `threading.Thread.join` turns that into
+    a CI job that reports nothing until it hits its own time limit --
+    six hours, in the case that prompted this helper.  Bounded, the same
+    defect fails in a minute and names the test it happened in.
+    """
+    barrier = threading.Barrier(nthreads)
+    errors = []
+
+    def target(i):
+        try:
+            barrier.wait(timeout=timeout)
+            work(i)
+        except BaseException as exc:  # pragma: no cover
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=target, args=(i,), daemon=True)
+        for i in range(nthreads)
+    ]
+    for t in threads:
+        t.start()
+    deadline = time.monotonic() + timeout
+    for t in threads:
+        t.join(timeout=max(0.0, deadline - time.monotonic()))
+    still_running = sum(1 for t in threads if t.is_alive())
+    assert not still_running, (
+        f"{still_running}/{nthreads} threads still running after {timeout}s"
+    )
+    return errors
+
 
 class test_cached_property_is_computed_once:
     def _race_on(self, obj, nthreads=8):
-        barrier = threading.Barrier(nthreads)
         seen = []
         lock = threading.Lock()
 
-        def work():
-            barrier.wait()
+        def work(i):
             value = obj.val
             with lock:
                 seen.append(value)
 
-        threads = [threading.Thread(target=work) for _ in range(nthreads)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        assert not race(work, nthreads)
         return seen
 
     def test_concurrent_miss_computes_once(self):
@@ -82,23 +120,17 @@ class test_cached_property_is_computed_once:
                 return service
 
         proxy = MyProxy()
-        barrier = threading.Barrier(8)
         seen = []
         seen_lock = threading.Lock()
 
-        def work():
-            barrier.wait()
+        def work(i):
             # Resolve outside the lock -- holding it here would serialise
             # the very access this test is trying to race.
             service = proxy._service
             with seen_lock:
                 seen.append(service)
 
-        threads = [threading.Thread(target=work) for _ in range(8)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        assert not race(work)
 
         assert len(built) == 1
         assert len({id(s) for s in seen}) == 1
@@ -193,61 +225,37 @@ class test_LRUCache_thread_safety:
         # free-threaded build now means the mutex is on.  This is the
         # workload that used to segfault the interpreter.
         c = LRUCache(limit=50)
-        barrier = threading.Barrier(8)
-        errors = []
 
         def work(i):
-            barrier.wait()
-            try:
-                for n in range(200):
-                    c[f"{i}-{n}"] = n
-                    list(c.keys())
-                    list(c.items())
-                    list(c.values())
-            except BaseException as exc:  # pragma: no cover
-                errors.append(exc)
+            for n in range(200):
+                c[f"{i}-{n}"] = n
+                list(c.keys())
+                list(c.items())
+                list(c.values())
 
-        threads = [threading.Thread(target=work, args=(i,)) for i in range(8)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        assert not errors
+        assert not race(work)
 
     def test_concurrent_mapping_surface(self):
         # The test above only drives the methods LRUCache defines itself.
         # Every other mapping operation used to be inherited straight from
         # FastUserDict, reaching self.data with the mutex released.
         c = LRUCache(limit=50)
-        barrier = threading.Barrier(8)
-        errors = []
 
         def work(i):
-            barrier.wait()
-            try:
-                for n in range(200):
-                    key = f"{i}-{n}"
-                    c[key] = n
-                    len(c)
-                    key in c  # noqa: B015
-                    repr(c)
-                    c.copy()
-                    c.get(key)
-                    c.setdefault(f"sd-{i}", n)
-                    c.pop(key, None)
-                    if not n % 50:
-                        c.clear()
-            except BaseException as exc:  # pragma: no cover
-                errors.append(exc)
+            for n in range(200):
+                key = f"{i}-{n}"
+                c[key] = n
+                len(c)
+                key in c  # noqa: B015
+                repr(c)
+                c.copy()
+                c.get(key)
+                c.setdefault(f"sd-{i}", n)
+                c.pop(key, None)
+                if not n % 50:
+                    c.clear()
 
-        threads = [threading.Thread(target=work, args=(i,)) for i in range(8)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        assert not errors
+        assert not race(work)
 
 
 class test_LRUCache_takes_the_mutex:
@@ -464,31 +472,19 @@ class test_Signal_receiver_iteration:
 
         owner = Owner()
         signal = Owner.sig
-        barrier = threading.Barrier(8)
-        errors = []
 
         def work(i):
-            barrier.wait()
-            try:
-                for _n in range(200):
+            for _n in range(200):
 
-                    async def handler(*args, **kwargs): ...
+                async def handler(*args, **kwargs): ...
 
-                    if i % 2:
-                        signal.connect(handler)
-                        signal.disconnect(handler)
-                    else:
-                        list(signal.iter_receivers(owner))
-            except BaseException as exc:  # pragma: no cover
-                errors.append(exc)
+                if i % 2:
+                    signal.connect(handler)
+                    signal.disconnect(handler)
+                else:
+                    list(signal.iter_receivers(owner))
 
-        threads = [threading.Thread(target=work, args=(i,)) for i in range(8)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        assert not errors
+        assert not race(work)
         # Every connect above was paired with a disconnect, so the set has
         # to be empty.  Without this the test proved much less than it
         # looked like it did: disconnect() was a no-op for strong
