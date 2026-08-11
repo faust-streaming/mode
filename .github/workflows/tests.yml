@@ -36,6 +36,24 @@ jobs:
           # GIL disabled; see docs/free-threading.md.
           - "3.14t"
         experimental: [ false ]
+        include:
+          # Python 3.15, which `allow-prereleases` below resolves to the
+          # newest pre-release the runner image publishes -- 3.15.0rc1 at the
+          # time of writing, and 3.15.0 itself once it ships in October 2026,
+          # with no change needed here.
+          #
+          # Advisory (`experimental: true` -> `continue-on-error`) while 3.15
+          # is a pre-release: the suite passes on 3.15.0rc1 today, but rc2 and
+          # the final release are still to come, and a regression in CPython
+          # itself -- or a test dependency that has no 3.15 wheels yet and
+          # fails to build from source -- must not block merges on a version
+          # nothing runs in production.  Move these two entries up into the
+          # `python-version` list above (and delete them from `include`) to
+          # make 3.15 a required check once 3.15.0 final is out.
+          - python-version: "3.15"
+            experimental: true
+          - python-version: "3.15t"
+            experimental: true
 
     steps:
       - uses: actions/checkout@v4
@@ -49,6 +67,13 @@ jobs:
       - uses: "actions/setup-python@v5"
         with:
           python-version: "${{ matrix.python-version }}"
+          # Required for the 3.15 rows: without it the version spec only
+          # matches stable releases and the job fails with "Version 3.15 was
+          # not found in the local cache".  It is safe to set for every row --
+          # it widens `3.X` to `~3.X.0-0`, and a pre-release only wins when no
+          # stable release satisfies the spec, so 3.10-3.14 still resolve to
+          # their newest stable patch.
+          allow-prereleases: true
           cache: "pip"
           cache-dependency-path: |
             requirements-docs.txt
