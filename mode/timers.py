@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import AsyncIterator, Awaitable, Iterator
 from itertools import count
 from time import perf_counter
-from typing import Callable
+from typing import Callable, Optional
 
 from .utils.logging import get_logger
 from .utils.times import Seconds, want_seconds
@@ -39,6 +39,7 @@ class Timer:
         interval: Seconds,
         *,
         max_drift_correction: float = 0.1,
+        max_drift: Optional[float] = None,
         name: str = "",
         clock: ClockArg = perf_counter,
         sleep: SleepArg = asyncio.sleep,
@@ -50,8 +51,16 @@ class Timer:
         self.sleep: SleepArg = sleep
         interval_s = self.interval_s = want_seconds(interval)
 
-        # Log when drift exceeds this number
-        self.max_drift = min(interval_s * MAX_DRIFT_PERCENT, MAX_DRIFT_CEILING)
+        # Log when drift exceeds this number.
+        # Callers that find the default threshold too sensitive (e.g. it
+        # logs on drift that isn't actionable for them) can pass an
+        # explicit `max_drift` to raise -- or lower -- it.
+        if max_drift is not None:
+            self.max_drift = max_drift
+        else:
+            self.max_drift = min(
+                interval_s * MAX_DRIFT_PERCENT, MAX_DRIFT_CEILING
+            )
 
         if interval_s > self.max_drift_correction:
             self.min_interval_s = interval_s - self.max_drift_correction

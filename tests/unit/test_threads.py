@@ -197,6 +197,23 @@ class test_ServiceThread:
         await thread._thread_keepalive(thread)
 
     @pytest.mark.asyncio
+    async def test__thread_keepalive__forwards_configured_max_drift(
+        self, *, thread
+    ):
+        thread.keepalive_max_drift = 5.0
+        calls = []
+
+        async def timer(interval, **kwargs):
+            calls.append(kwargs)
+            yield interval
+
+        thread.itertimer = timer
+
+        await thread._thread_keepalive(thread)
+
+        assert calls[0]["max_drift"] == 5.0
+
+    @pytest.mark.asyncio
     async def test_serve(self, *, thread):
         self.mock_for_serve(thread)
         await thread._serve()
