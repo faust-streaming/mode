@@ -49,10 +49,6 @@ class test_WorkerThread:
 
 class test_ServiceThread:
     @pytest.fixture
-    def loop(self, *, event_loop):
-        return event_loop
-
-    @pytest.fixture
     def thread_loop(self):
         return Mock(name="thread_loop")
 
@@ -90,10 +86,10 @@ class test_ServiceThread:
         thread.start.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_start(self, *, event_loop, thread):
+    async def test_start(self, *, loop, thread):
         thread.add_future = AsyncMock(name="thread.add_future")
         thread._thread_running = None
-        assert thread.parent_loop == event_loop
+        assert thread.parent_loop == loop
         asyncio.ensure_future(self._wait_for_event(thread))  # noqa: RUF006
         await thread.start()
 
@@ -103,11 +99,11 @@ class test_ServiceThread:
         assert thread._thread_started.is_set()
 
     @pytest.mark.asyncio
-    async def test_start__no_wait(self, *, event_loop, thread):
+    async def test_start__no_wait(self, *, loop, thread):
         thread.add_future = Mock(name="thread.add_future")
         thread.wait_for_thread = False
         thread._thread_running = None
-        assert thread.parent_loop == event_loop
+        assert thread.parent_loop == loop
         asyncio.ensure_future(self._wait_for_event(thread))  # noqa: RUF006
         await thread.start()
 
@@ -265,7 +261,7 @@ class test_ServiceThread:
         thread._thread_running.set_exception.assert_called_with(exc)
 
     @pytest.mark.asyncio
-    async def test__wakeup_timer_in_thread(self, *, thread, event_loop):
+    async def test__wakeup_timer_in_thread(self, *, thread, loop):
         thread.add_future = Mock(name="thread.add_future")
         thread._wakeup_timer_in_thread = AsyncMock()
         thread._stopped.is_set = Mock(return_value=False)
@@ -276,7 +272,7 @@ class test_ServiceThread:
             thread._stopped.is_set.return_value = True
             assert thread.should_stop
 
-        event_loop.call_soon(cb)
+        loop.call_soon(cb)
         await thread._keepalive2()
 
         thread._wakeup_timer_in_thread.assert_awaited()

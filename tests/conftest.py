@@ -1,6 +1,8 @@
-import pytest
+import asyncio
+
+import pytest_asyncio
 
 
-@pytest.fixture
-def loop(event_loop):
-    return event_loop
+@pytest_asyncio.fixture
+async def loop():
+    return asyncio.get_running_loop()
