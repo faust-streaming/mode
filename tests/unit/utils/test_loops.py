@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from mode.utils import loops
 from mode.utils.loops import (
     _appropriate_signal_handler,
     _call_asap,
@@ -15,6 +16,14 @@ from mode.utils.loops import (
     clone_loop,
     get_event_loop,
 )
+
+
+@pytest.fixture(autouse=True)
+def _no_cached_loop(monkeypatch):
+    # get_event_loop() caches the loop it resolves per thread.  Earlier tests
+    # on this thread can leave a loop there that is still open (pytest-asyncio
+    # 1.x no longer closes it on teardown), so start each test without one.
+    monkeypatch.setattr(loops._current_loop, "loop", None, raising=False)
 
 
 def test_get_event_loop__returns_running_loop_when_running():
