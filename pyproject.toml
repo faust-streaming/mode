@@ -83,6 +83,7 @@ Repository = "https://github.com/faust-streaming/mode"
 
 [tool.pytest.ini_options]
 minversion = "6.0"
+asyncio_default_fixture_loop_scope = "function"
 python_classes = "test_*"
 testpaths = [
     "tests/unit",
